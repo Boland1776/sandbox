@@ -15,10 +15,10 @@ pipeline {
             input {
                 message "Should we continue?"
                 ok "Yes, we should."
-                submitter "Chris"
-                parameters {
-                    string(name: 'PERSON', defaultValue: 'Mr Jenkins', description: 'Who should I say hello to?')
-                }
+ //               submitter "Chris"
+ //               parameters {
+ //                   string(name: 'PERSON', defaultValue: 'Mr Jenkins', description: 'Who should I say hello to?')
+ //               }
             }
   //          environment {
   //              TEST_CREDS = credentials('my-predefined-ssh-creds')
