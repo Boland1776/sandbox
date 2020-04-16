@@ -20,17 +20,14 @@ pipeline {
  //                   string(name: 'PERSON', defaultValue: 'Mr Jenkins', description: 'Who should I say hello to?')
  //               }
             }
-  //          environment {
-  //              TEST_CREDS = credentials('my-predefined-ssh-creds')
-  //          }
+            environment {
+                TEST_CREDS = credentials('my-predefined-ssh-creds')
+            }
   //withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
             steps {
                 echo "Reading delete_list.txt"
                 sh 'cat delete_list.txt'
-//                def result = readFile "delete_list.txt"
-
- //               def data = readFile(file: 'delete_list.txt')
- //               println(data)
+                def j = 0
             }
         }
     }
