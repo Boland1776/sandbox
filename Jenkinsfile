@@ -27,7 +27,7 @@ pipeline {
             steps {
                 echo "Reading delete_list.txt"
                 sh 'cat delete_list.txt'
-                def result = readFile "delete_list.txt"
+//                def result = readFile "delete_list.txt"
 
  //               def data = readFile(file: 'delete_list.txt')
  //               println(data)
