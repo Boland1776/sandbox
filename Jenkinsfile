@@ -1,5 +1,9 @@
 pipeline {
-    agent brick
+    agent {
+        node {
+            label 'v2_builder'
+        }
+    }
     stages {
         stage ('Pull and Execute python script'){
             println "execute artifactory-cleaner.py"
