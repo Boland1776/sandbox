@@ -11,5 +11,12 @@ pipeline {
                 sh "python artifactory-cleaner.py bullhorn-activity-center-0.1"        
             }
         }
+        stage('Delete repos'){
+            steps {
+                echo "Reading delete_list.txt"
+                def data = readFile(file: 'delete_list.txt')
+                println(data)
+            }
+        }
     }
 }
