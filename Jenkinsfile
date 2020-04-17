@@ -27,7 +27,7 @@ pipeline {
             steps {
                 echo "Reading delete_list.txt"
                 sh 'cat delete_list.txt'
-                def j = 0
+ //               def j = 0
             }
         }
     }
