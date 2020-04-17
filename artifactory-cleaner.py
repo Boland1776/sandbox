@@ -2,6 +2,7 @@
 #!/usr/bin/env python
 
 # This script MUST be called with python 2.x
+# DIR and MAX_DAYS will be overridden when the script is called.
 
 import json
 import re
@@ -9,17 +10,19 @@ import os
 import datetime
 import argparse
 
-# For my test; script needs to be in /home/jenkins/hydrogen/workspace/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/test
+# For my test; script needs to be in;
+#   /home/jenkins/hydrogen/workspace/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/test
 
 BASE_PATH    = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage/bh-snapshots/com/bullhorn/'
 DIR          = 'bullhorn-activity-center-0.1'
 WORKING_FILE = "working.txt"
 TESTING_FILE = "text.txt"
 DELETE_FILE  = "delete_list.txt"
-MAX_DAYS     = 20
+MAX_DAYS     = 60
+QUICK_TEST   = False
 USE_PARENT_DATE = False			# If True; check parent folder 'lastModified' time and remove all files under it
                                         # If False; ignore parent date and check all files in folder
-USE_FILE_DATE   = not USE_PARENT_DATE	# Use one or the other date checks
+#USE_FILE_DATE   = not USE_PARENT_DATE	# Use one or the other date checks
 
 # List of entries we want to skipp over (can be a regex pattern)
 SKIP_LIST = ['/[0,1].[0,1]-SNAPSHOT',
@@ -37,10 +40,31 @@ delete_list     = list()
 
 parser = argparse.ArgumentParser(description='NPM artifact cleaner')
 parser.add_argument('directory')
+parser.add_argument('-d','--days', help='Remove files older than this value', type=int)
+parser.add_argument('-p','--parent_date', help='Compare date on parent folder instead of date string in file names', action='store_true')
+parser.add_argument('-q','--quick', help='Quick test (Done create dlete_list file', action='store_true')
+
 args = parser.parse_args()
 DIR  = args.directory
 
-print 'Grabbing %s data..' % DIR
+if args.days:
+  MAX_DAYS = args.days
+
+if args.parent_date:
+    USE_PARENT_DATE = True
+
+if args.quick:
+    QUICK_TEST = True
+
+USE_FILE_DATE   = not USE_PARENT_DATE
+
+print 'Path: %s' % DIR
+print 'Days: %d' % MAX_DAYS
+print 'Quick Test: ', QUICK_TEST
+print 'Use parent date: ', USE_PARENT_DATE
+#raw_input('stop')
+
+print '\nGrabbing %s data..' % DIR
 base_path = BASE_PATH + DIR
 
 # Pull the data from the specified direcotry
@@ -62,7 +86,7 @@ for p in data['children']:					# Loop through folders (children key)
   keep['folder'] = p['folder']  # Should either be true or false
   keep['uri'] = p['uri']	# Folder or file name
 
-# Pull the data from the child folder
+  # Pull the data from the child folder
   curl_str = 'curl ' + BASE_PATH + DIR + p['uri'] + " -o " + WORKING_FILE + " > /dev/null 2>&1"
   print '  process: %s' % p['uri']
   os.system(curl_str)
@@ -101,7 +125,6 @@ for p in data['children']:					# Loop through folders (children key)
       print '      delete: %s .. is > %d days old' % (folder, MAX_DAYS)
       print '        %s' % (del_str)
       delete_list.append(del_str)
-#      delete_list.append(base_path + p['uri'] + folder)
     else:
       print '      keep: %s .. is <= %d days old' % (folder, MAX_DAYS)
 
@@ -120,7 +143,6 @@ for p in data['children']:					# Loop through folders (children key)
           print '      delete: %s .. is > %d days old' % (file_name, MAX_DAYS)
           print '        %s' % (del_str)
           delete_list.append(del_str)
-#          delete_list.append(base_path + p['uri'] + file_name)
         else:
           print '      keep: %s .. is <= %d days old' % (file_name, MAX_DAYS)
       else:
@@ -129,9 +151,11 @@ for p in data['children']:					# Loop through folders (children key)
 
 # write these entries to a file and have pipeline read it to do actual delete
 print 'Saving %d entries to %s' % (len(delete_list), DELETE_FILE)
-with open(DELETE_FILE, 'w') as fi:
-  for d in delete_list:
-    fi.write('%s\n' % d)
+os.system('echo "" > ' + DELETE_FILE) # Create empty file
+if not QUICK_TEST:
+  with open(DELETE_FILE, 'w') as fi:
+    for d in delete_list:
+      fi.write('%s\n' % d)
 
 print 'Cleaning up tmp files'
 print 'rm ' + WORKING_FILE
