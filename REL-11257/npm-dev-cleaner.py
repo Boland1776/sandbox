@@ -238,11 +238,13 @@ def main():
 #        print '**WARNING you are actually going to delete data**'
 #        user_input('WARN')
     print 'Flags..'
+    print 'DAYS: ', MAX_DAYS
     print 'VERBOSE: ', VERBOSE
     print 'DO_DELETE: ', DO_DELETE
     print 'WAIT: ', WAIT
     print 'USER: ', user
     print 'PASS: ', passwd
+    print 'SKIP: ', SKIP_LIST
     sys.exit(0)
 
     if GEN_SAVED_DATA:  # Scan the folders and save the data (saved data used for debugging)
