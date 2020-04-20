@@ -7,23 +7,23 @@ pipeline {
     stages {
         stage('Clean npm-dev'){
             steps {
-                echo "execute artifactory-cleaner.py"
-                def options = ""
-                if (params.MAX_DAYS) {
-                   options = options + " -d ${MAX_DAYS}"
-                }
-                if (params.VERBOSE) {
-                   options = options + " -v"
-                }
-                if (params.SKIP_LIST) {
-                   options = options + " -S ${SKIP_LIST}"
-                }
-//                if (params.DO_DELETE) {
+              echo "execute artifactory-cleaner.py"
+  //              def options = ""
+              if (${MAX_DAYS}) {
+                 options = options + " -d ${MAX_DAYS}"
+              }
+              if (${VERBOSE}) {
+                 options = options + " -v"
+              }
+              if (${SKIP_LIST}) {
+                 options = options + " -S ${SKIP_LIST}"
+              }
+              //                if (${DO_DELETE}) {
 //                   options = options + " -D"
 //                }
-                withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
+               withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
                   sh "python REL-11257/npm-dev-cleaner.py ${options} -u ${NAME} -p ${WORD}"
-                }
+               }
             }
         }
     }
