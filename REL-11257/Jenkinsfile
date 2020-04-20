@@ -24,12 +24,12 @@ pipeline {
         if (${params.MAX_DAYS}) {
           options="${options} -d ${params.MAX_DAYS}"
         }
-        if [ ${env.VERBOSE} ]; then
+        if ($parmas.VERBOSE}) {
           options=${options} -v"
-        fi
-        if [ ${env.SKIP_LIST} ]; then
+        }
+        if (params.SKIP_LIST}) {
           options=${options} -S ${env.SKIP_LIST}"
-        fi
+        }
         withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
           sh "python REL-11257/npm-dev-cleaner.py ${options} -u ${NAME} -p ${WORD}"
         }
