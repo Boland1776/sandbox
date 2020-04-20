@@ -4,14 +4,26 @@ pipeline {
             label 'v2_builder'
         }
     }
+  parameters {
+        string(name: 'MAX_DAYS', defaultValue: '30', description: 'Delete files older than this?')
+        booleanParam(name: 'VERBOSE', defaultValue: false, description: 'Toggle this value')
+
+//        text(name: 'BIOGRAPHY', defaultValue: '', description: 'Enter some information about the person')
+
+//        booleanParam(name: 'TOGGLE', defaultValue: true, description: 'Toggle this value')
+
+//        choice(name: 'CHOICE', choices: ['One', 'Two', 'Three'], description: 'Pick something')
+
+//        password(name: 'PASSWORD', defaultValue: 'SECRET', description: 'Enter a password')
+    }
   stages {
     stage ('Clean npm-dev artifactory repo') {
       steps {
         options=""
         echo 'Calling script'
-        if [ ${MAX_DAYS} ]; then
-          options="${options} -d ${MAX_DAYS}"
-        fi
+        if (${params.MAX_DAYS}) {
+          options="${options} -d ${params.MAX_DAYS}"
+        }
         if [ ${env.VERBOSE} ]; then
           options=${options} -v"
         fi
