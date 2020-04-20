@@ -1,6 +1,8 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 
+# Called by Jenkins pipeline (from Hydrogen : Release_Engineering/Practice/Artifactory-NPM-cleanup)
+
 import json
 import re
 import os
@@ -8,25 +10,45 @@ import datetime
 import argparse
 import requests
 import sys
+import time
 
+# When set, we collect all the data via curl and save the data for future test runs. If the flag is False, we dont
+# run the "curl" and rely on the data saved in the files (initially, these curls are taking 10's of minutes).
+GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we catalog files saved)
 VERBOSE      = False
-TEST_MODE    = True
-QUICK_TEST   = False
+TEST_MODE    = False    # Do not set when calling from pipeline
+WAIT         = False    # Wait for user if true.
+DO_DELETE    = False    # Saftey measure. You MUST call script with "-D" to actually delete
 MAX_DAYS     = 30
+
+# This is what we process
 BASE_PATH    = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
 DEV_PATH     = BASE_PATH + '/npm-dev'
-DEV_CATALOG  = "dev_catalog.txt"
 REL_PATH     = BASE_PATH + '/npm-release'
+
+DEV_CATALOG  = "dev_catalog.txt"
 REL_CATALOG  = "release_catalog.txt"
 KEEP_FILES   = 'keepers.txt'
 DELETE_FILES = 'deleters.txt'
 
+# Skip the following folders in the npm-dev repo
+SKIP_LIST    = ['.npm/@bullhorn-internal',
+                '.npm/@bullhorn',
+                '.npm/bh-elements',
+                '.npm/chomsky',
+                '.npm/galaxy-parser',
+                '.npm-generator-novo'
+                '@bullhorn-internal',
+                '@bullhorn',
+                'bh-elements',
+                'chomsky',
+                'galaxy-parser',
+                'generator-novo'
+               ]
+
 tmp             = datetime.datetime.today()
 todays_date_str = tmp.strftime("%Y-%m-%d")
 todays_date     = tmp.strptime(todays_date_str, "%Y-%m-%d")
-
-#USER = 'jenkins_publisher'
-#PASS = 'artifactory4bullhorn'
 
 def collect_data(uri):
     """Collect URI data via curl and return as JSON dict"""
@@ -47,12 +69,19 @@ def collect_data(uri):
     return data
 
 def user_input(msg):
+    """Wait for user input. Should only be run from CLI (not from Jenkins pipeline)"""
+    global WAIT
+
     """Display 'msg' and wait for user to press enter"""
     print msg
-    if VERBOSE: raw_input('Press Enter to continue')
+    if WAIT:
+        raw_input('Press Enter to continue')
+    else:
+        time.sleep(2)
 
-# Traverse through folders. Will call itself to move deeper down the tree
 def traverse(repo_name, data, catalog):
+    """Traverse through folders looking for files. Recuersively calls itself until a folder has been processed"""
+
     if repo_name == 'dev':
         use_repo = DEV_PATH
     elif repo_name == 'rel':
@@ -62,14 +91,26 @@ def traverse(repo_name, data, catalog):
         return catalog
 
     for c in data['children']:  # Follow the children folders
-        new_path = use_repo + data['path'] + c['uri']   # Generate a new parent (BASE + child folder)
-        new_data = collect_data(new_path)    # Run the curl on the new path
-        if c['folder']:         # If the child is a folder, traverse it
-            traverse(repo_name, new_data, catalog)                                      # Traverse the new path
-        else:                                                       # If not a folder then save the file and date
-            # This is a file but we still need the file perms on it
-            file = data['path'] + c['uri']                          # File (after DEV_PATH start point)
-            catalog[file] = new_data['created']
+
+        # Here we skip over entries in the SKIP_LIST. Since that only applies to 'dev' (we want a full record of 'rel'
+        # we only do this when processing 'dev')
+        if repo_name == 'dev':
+            if len(SKIP_LIST) > 0:      # Make sure there is something to skip
+                if re.findall(r"(?=("+'|'.join(SKIP_LIST)+r"))", data['path']): # See folder to skip is this folder, continue
+                    if VERBOSE: print '=> skipping: %s' % data['uri']
+                    user_input('Skip child')
+                    return              # There was a match so return w/o further processing
+
+        # If we are here, we have a folder to process.
+        # Create the full path (new_path) with child name in case this is a folder we need to go deepeer into
+        new_path = use_repo + data['path'] + c['uri']
+        new_data = collect_data(new_path)           # Run the curl on the new path
+        if c['folder']:                             # If the child is a folder, traverse it
+            traverse(repo_name, new_data, catalog)  # Call myself with new path
+        else:                                       # If not a folder, new_data contains the date info we need
+            print 'saving file: %s' % c['uri']
+            file = data['path'] + c['uri']          # File (after DEV_PATH start point)
+            catalog[file] = new_data['created']     # Save created date in dict with <file> as key
 
     return(catalog)
 
@@ -102,12 +143,16 @@ def read_data(file):
     return(dct) # Return the new dictionary
 
 def show_catalog(cat):
+    """Show the catalog's dictionary"""
+
     print '\nDisplay catalog, %d entries..' % len(cat)
     user_input('Press Enter when ready to view')
     for k in sorted(cat):
         print '%s :created on: %s' % (k, cat[k])
 
 def save_catalog(dct, file):
+    """Save the catalog dictionary (dct) to file"""
+
     if VERBOSE: print 'Writing %s' % file
     with open(file, 'w') as fo:
         for k in sorted(dct):
@@ -122,26 +167,31 @@ def write_list(file, lst):
             file_ptr.write('%s\n' % k)
 
 def delete_files(lst, u, p):
+    """Delete the files from the delete list.
+        See: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes   for return codes
+    """
+
     global VERBOSE
 
     for f in lst:
         file = DEV_PATH + f
-        if VERBOSE: print 'deleting "%s"' % file
 
-        if TEST_MODE:
-            resp = requests.get(file, auth=(u, p))
-            print resp
-            user_input('Next')
+        if DO_DELETE:
+            if VERBOSE: print 'deleting "%s"' % file
+            resp = requests.delete(file, auth=(u, p))
         else:
-            pass    # Remove this in real life
+            if VERBOSE: print 'Issuing "get" for "%s"' % file
+            resp = requests.get(file, auth=(u, p))
 
-        # https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
-            resp = requests.delete(f, auth=(u, p))
-            if not re.match(r'<Response [2\d\d]>', resp):   # If we see a non-success message, print it
-                print resp
+        if not resp.status_code <= 200 <= 299:  # Non-success values (success >= 200 < 300)
+            print 'WARNING: ', resp
+            user_input('A non-success value was returned!')
+        user_input('GO')
 
 def main():
-    global MAX_DAYS, QUICK_TEST, VERBOSE
+    """Main loop of script"""
+
+    global MAX_DAYS, VERBOSE, TEST_MODE, GEN_SAVED_DATA, SKIP_LIST, WAIT, DO_DELETE
 
     rel_catalog = dict()
     dev_catalog = dict()
@@ -152,50 +202,63 @@ def main():
     parser.add_argument('-d', '--days', help='Remove files older than this value', type=int)
     parser.add_argument('-q', '--quick', help='Quick test (Done create dlete_list file', action='store_true')
     parser.add_argument('-v', '--verbose', help='Be verbose in processing', action='store_true')
-    if not TEST_MODE:
-        parser.add_argument('-u', '--user', help='username', required=True, type=str)
-        parser.add_argument('-p', '--password', help='passwd', required=True, type=str)
-    else:
-        user = 'jenkins_publisher'
-        passwd = 'artifactory4bullhorn'
+    parser.add_argument('-g', '--generate', help='Dont generate saved data files', action='store_true')
+    parser.add_argument('-t', '--test_mode', help='Use saved data and dont execute delete', action='store_true')
+    parser.add_argument('-w', '--wait', help='Wait for user (should only be used on CLI)', action='store_true')
+    parser.add_argument('-D', '--delete', help='Set this flag to actually delete the files', action='store_true')
+    parser.add_argument('-S', '--skip', help='Comma seperated list of folders to add to internal SKIP_LIST', type=str)
+    parser.add_argument('-u', '--user', help='username', required=True, type=str)
+    parser.add_argument('-p', '--password', help='passwd', required=True, type=str)
 
     args = parser.parse_args()
 
     if args.days:
         MAX_DAYS = args.days
+        if TEST_MODE:
+            print 'TEST_MODE is set and you issued the "-d DAYS" option!'
+            print 'TEST_MODE reads saved data calculated at 30 days, so this might not give the results you expect!'
 
-    if args.quick:
-        QUICK_TEST = True
+    if args.test_mode: TEST_MODE = True
+    if args.delete: DO_DELETE = True
+    if args.verbose: VERBOSE = True
+    if args.wait: WAIT = True
+    if args.generate: GEN_SAVED_DATA = False    # Rely only on saved file data
+    if args.skip:   # Add these items to our skip list
+        new_list = args.skip.split(',')
+        SKIP_LIST = SKIP_LIST + new_list
+        print 'New list: ', SKIP_LIST
+        if not GEN_SAVED_DATA:
+            print 'Warning: "-S" should not be used with "-g" (since we will be generating new data)'
 
-    if args.verbose:
-        VERBOSE = True
 
-    if not TEST_MODE:
-        user = args.user
-        passwd = args.password
+    user = args.user
+    passwd = args.password
 
-    # Instead of continuously polling artifactory, I have the data saved and will just read it
-    if TEST_MODE:
-        if VERBOSE: print 'Running in TEST_MODE'
-        dev_catalog = read_data(DEV_CATALOG)
-        if VERBOSE: print '%d files read from %s' % (len(dev_catalog), DEV_CATALOG)
-#        show_catalog(dev_catalog)
-        rel_catalog = read_data(REL_CATALOG)
-        if VERBOSE: print '%d files read from %s' % (len(rel_catalog), REL_CATALOG)
-        user_input('Data is loaded in catalogs')
-    else:
+#    if DO_DELETE:
+#        print '**WARNING you are actually going to delete data**'
+#        user_input('WARN')
 
+    if GEN_SAVED_DATA:  # Scan the folders and save the data (saved data used for debugging)
         print '\nGenerating npm-dev catalog'
+        if len(SKIP_LIST):
+            print '  and will skip: ', SKIP_LIST
+
         dev_base = collect_data(DEV_PATH)
         traverse('dev', dev_base, dev_catalog)
-    #    show_catalog(dev_catalog)
         save_catalog(dev_catalog, DEV_CATALOG)
 
         print '\nGenerating npm-release catalog'
         rel_base = collect_data(REL_PATH)
         traverse('rel', rel_base, rel_catalog)
-    #    show_catalog(rel_catalog)
         save_catalog(rel_catalog, REL_CATALOG)
+    else:               # Son't scan repo, use data from previous run
+        if VERBOSE: print 'Using saved data'
+        dev_catalog = read_data(DEV_CATALOG)
+        if VERBOSE: print '%d files read from %s' % (len(dev_catalog), DEV_CATALOG)
+        rel_catalog = read_data(REL_CATALOG)
+        if VERBOSE: print '%d files read from %s' % (len(rel_catalog), REL_CATALOG)
+        user_input('Data is loaded in catalogs.')
+
 
     # Now that I have all the development and release files, with their creation dates, it's time to process them
     # Files > MAX_DAYS and are NOT in the release catalog can be deleted
@@ -214,7 +277,6 @@ def main():
 
             if delta.days > MAX_DAYS:
                 if VERBOSE: print '( > %d days old) .. mark for removal' % MAX_DAYS
-#                print '( > %d days old) .. continue checking parameters for removal' % MAX_DAYS
                 delete.append(dev_file)         # Put this file in the delete list
             else:
                 if VERBOSE: print '( <= %d days old) .. keeping it' % MAX_DAYS
