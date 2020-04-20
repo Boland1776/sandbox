@@ -7,16 +7,17 @@ pipeline {
   stages {
     stage ('Clean npm-dev artifactory repo') {
       steps {
+        options=""
         echo 'Calling script'
-        if (${env.MAX_DAYS}) {
-          options = options + " -d ${env.MAX_DAYS}"
-        }
-        if (${env.VERBOSE}) {
-          options = options + " -v"
-        }
-        if (${env.SKIP_LIST}) {
-          options = options + " -S ${env.SKIP_LIST}"
-        }
+        if [ ${MAX_DAYS} ]; then
+          options="${options} -d ${MAX_DAYS}"
+        fi
+        if [ ${env.VERBOSE} ]; then
+          options=${options} -v"
+        fi
+        if [ ${env.SKIP_LIST} ]; then
+          options=${options} -S ${env.SKIP_LIST}"
+        fi
         withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
           sh "python REL-11257/npm-dev-cleaner.py ${options} -u ${NAME} -p ${WORD}"
         }
