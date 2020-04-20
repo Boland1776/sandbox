@@ -11,8 +11,8 @@ import sys
 
 VERBOSE      = False
 TEST_MODE    = True
-MAX_DAYS     = 30
 QUICK_TEST   = False
+MAX_DAYS     = 30
 BASE_PATH    = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
 DEV_PATH     = BASE_PATH + '/npm-dev'
 DEV_CATALOG  = "dev_catalog.txt"
@@ -35,7 +35,7 @@ def collect_data(uri):
 
     data = list()
     curl_str = 'curl ' + uri + " -o " + tmp_file + " > /dev/null 2>&1"
-    print 'Processing: %s' % uri
+    if VERBOSE: print 'Processing: %s' % uri
     os.system(curl_str)
     try:
         with open(tmp_file) as file_in:
@@ -49,7 +49,7 @@ def collect_data(uri):
 def user_input(msg):
     """Display 'msg' and wait for user to press enter"""
     print msg
-    raw_input('Press Enter to continue')
+    if VERBOSE: raw_input('Press Enter to continue')
 
 # Traverse through folders. Will call itself to move deeper down the tree
 def traverse(repo_name, data, catalog):
@@ -58,7 +58,7 @@ def traverse(repo_name, data, catalog):
     elif repo_name == 'rel':
         use_repo = REL_PATH
     else:
-        print 'Invalid repo name (%s)' % repo_name
+        if VERBOSE: print 'Invalid repo name (%s)' % repo_name
         return catalog
 
     for c in data['children']:  # Follow the children folders
@@ -79,7 +79,7 @@ def read_data(file):
     dct  = dict()
 
     if not os.path.exists(file):
-        print '%s not found!' % file
+        if VERBOSE: print '%s not found!' % file
         sys.exit(1)
 
     # Read a saved file and store in a list
@@ -108,7 +108,7 @@ def show_catalog(cat):
         print '%s :created on: %s' % (k, cat[k])
 
 def save_catalog(dct, file):
-    print 'Writing %s' % file
+    if VERBOSE: print 'Writing %s' % file
     with open(file, 'w') as fo:
         for k in sorted(dct):
             fo.write('%s|%s\n' % (k, dct[k]))
@@ -116,7 +116,7 @@ def save_catalog(dct, file):
 def write_list(file, lst):
     """Write the list to file"""
 
-    print 'Writing list to %s' % file
+    if VERBOSE: print 'Writing list to %s' % file
     with open(file, 'w') as file_ptr:
         for k in sorted(lst):
             file_ptr.write('%s\n' % k)
@@ -126,8 +126,7 @@ def delete_files(lst, u, p):
 
     for f in lst:
         file = DEV_PATH + f
-        if VERBOSE:
-            print 'deleting "%s"' % file
+        if VERBOSE: print 'deleting "%s"' % file
 
         if TEST_MODE:
             resp = requests.get(file, auth=(u, p))
@@ -135,25 +134,27 @@ def delete_files(lst, u, p):
             user_input('Next')
         else:
             pass    # Remove this in real life
+
+        # https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
             resp = requests.delete(f, auth=(u, p))
+            if not re.match(r'<Response [2\d\d]>', resp):   # If we see a non-success message, print it
+                print resp
 
 def main():
     global MAX_DAYS, QUICK_TEST, VERBOSE
 
     rel_catalog = dict()
     dev_catalog = dict()
-    keep        = list()
-    delete      = list()
-#    user        = ''
-#    passwd      = ''
+    keep   = list()
+    delete = list()
 
     parser = argparse.ArgumentParser(description='NPM artifact cleaner')
-    parser.add_argument('-d','--days', help='Remove files older than this value', type=int)
-    parser.add_argument('-q','--quick', help='Quick test (Done create dlete_list file', action='store_true')
-    parser.add_argument('-v','--verbose', help='Be verbose in processing', action='store_true')
+    parser.add_argument('-d', '--days', help='Remove files older than this value', type=int)
+    parser.add_argument('-q', '--quick', help='Quick test (Done create dlete_list file', action='store_true')
+    parser.add_argument('-v', '--verbose', help='Be verbose in processing', action='store_true')
     if not TEST_MODE:
-        parser.add_argument('-u','--user', help='username', required=True, type=str)
-        parser.add_argument('-p','--password', help='passwd', required=True, type=str)
+        parser.add_argument('-u', '--user', help='username', required=True, type=str)
+        parser.add_argument('-p', '--password', help='passwd', required=True, type=str)
     else:
         user = 'jenkins_publisher'
         passwd = 'artifactory4bullhorn'
@@ -173,21 +174,14 @@ def main():
         user = args.user
         passwd = args.password
 
-#    print 'Releases: %s' % REL_PATH
-#    print '  Stored in: %s' % REL_CATALOG
-#    print 'Development: %s' % DEV_PATH
-#    print '  Stroed in: %s' % DEV_CATALOG
-#    print 'Days: %d' % MAX_DAYS
-#    print 'Quick Test: ', QUICK_TEST
-
     # Instead of continuously polling artifactory, I have the data saved and will just read it
     if TEST_MODE:
-        print 'Running in TEST_MODE'
+        if VERBOSE: print 'Running in TEST_MODE'
         dev_catalog = read_data(DEV_CATALOG)
-        print '%d files read from %s' % (len(dev_catalog), DEV_CATALOG)
+        if VERBOSE: print '%d files read from %s' % (len(dev_catalog), DEV_CATALOG)
 #        show_catalog(dev_catalog)
         rel_catalog = read_data(REL_CATALOG)
-        print '%d files read from %s' % (len(rel_catalog), REL_CATALOG)
+        if VERBOSE: print '%d files read from %s' % (len(rel_catalog), REL_CATALOG)
         user_input('Data is loaded in catalogs')
     else:
 
@@ -207,26 +201,26 @@ def main():
     # Files > MAX_DAYS and are NOT in the release catalog can be deleted
 
     for dev_file in sorted(dev_catalog):    # Loop through the development files
-        print 'processing: %s' % dev_file
-        if not dev_file in rel_catalog:     # If dev file is not in the release catalog, check date, etc
-            print '  is not in rel_catalog',
+        if VERBOSE: print 'processing: %s' % dev_file
+        if not dev_file in rel_catalog:     # If dev file is NOT in the release catalog, check date, etc
+            if VERBOSE: print '  is not in rel_catalog',
             tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', dev_catalog[dev_file])    # Strip off timezone
             tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
             file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
             file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
             file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
             delta         = todays_date - file_date
-            print 'and is %d days old' % delta.days,
+            if VERBOSE: print 'and is %d days old' % delta.days,
 
             if delta.days > MAX_DAYS:
-                print '( > %d days old) .. mark for removal' % MAX_DAYS
+                if VERBOSE: print '( > %d days old) .. mark for removal' % MAX_DAYS
 #                print '( > %d days old) .. continue checking parameters for removal' % MAX_DAYS
                 delete.append(dev_file)         # Put this file in the delete list
             else:
-                print '( <= %d days old) .. keeping it' % MAX_DAYS
+                if VERBOSE: print '( <= %d days old) .. keeping it' % MAX_DAYS
                 keep.append(dev_file)           # Put this file in the keep list
         else:
-            print '  is listed in release catalog and will be kept'
+            if VERBOSE: print '  is listed in release catalog and will be kept'
             keep.append(dev_file)           # Put this file in the keep list
 
     write_list(KEEP_FILES, keep)
