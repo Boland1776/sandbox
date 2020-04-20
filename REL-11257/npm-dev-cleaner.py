@@ -108,6 +108,10 @@ def traverse(repo_name, data, catalog):
         if c['folder']:                             # If the child is a folder, traverse it
             traverse(repo_name, new_data, catalog)  # Call myself with new path
         else:                                       # If not a folder, new_data contains the date info we need
+            if re.search(r'DONOTDELETE', c['uri']): # Skip deletion of these, too
+                print 'skipping DONOTDELETE file: ' % c['uri']
+                return
+              
             print 'saving file: %s' % c['uri']
             file = data['path'] + c['uri']          # File (after DEV_PATH start point)
             catalog[file] = new_data['created']     # Save created date in dict with <file> as key
