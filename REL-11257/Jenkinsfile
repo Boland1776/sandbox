@@ -22,13 +22,13 @@ pipeline {
         options=""
         echo 'Calling script'
         if (${params.MAX_DAYS}) {
-          options="${options} -d ${params.MAX_DAYS}"
+          options = "${options} -d ${params.MAX_DAYS}"
         }
         if (${params.VERBOSE}) {
-          options=${options} -v"
+          options = "${options} -v"
         }
         if (${params.SKIP_LIST}) {
-          options=${options} -S ${env.SKIP_LIST}"
+          options = "${options} -S ${params.SKIP_LIST}"
         }
         withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
           sh "python REL-11257/npm-dev-cleaner.py ${options} -u ${NAME} -p ${WORD}"
