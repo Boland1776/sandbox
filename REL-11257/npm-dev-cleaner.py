@@ -241,6 +241,9 @@ def main():
 #    if DO_DELETE:
 #        print '**WARNING you are actually going to delete data**'
 #        user_input('WARN')
+
+    VERBOSE = os.getenv("VERBOSE")
+    SKIP_LIST = os.getenv("SKIP_LIST")
     print 'Flags..'
     print 'DAYS: ', MAX_DAYS
     print 'VERBOSE: ', VERBOSE
