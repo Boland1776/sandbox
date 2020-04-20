@@ -24,10 +24,10 @@ pipeline {
         if (${params.MAX_DAYS}) {
           options="${options} -d ${params.MAX_DAYS}"
         }
-        if ($parmas.VERBOSE}) {
+        if (${params.VERBOSE}) {
           options=${options} -v"
         }
-        if (params.SKIP_LIST}) {
+        if (${params.SKIP_LIST}) {
           options=${options} -S ${env.SKIP_LIST}"
         }
         withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
