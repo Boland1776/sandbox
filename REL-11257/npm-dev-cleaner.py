@@ -237,6 +237,13 @@ def main():
 #    if DO_DELETE:
 #        print '**WARNING you are actually going to delete data**'
 #        user_input('WARN')
+    print 'Flags..'
+    print 'VERBOSE: ', VERBOSE
+    print 'DO_DELETE: ', DO_DELETE
+    print 'WAIT: ', WAIT
+    print 'USER: ', user
+    print 'PASS: ', passwd
+    sys.exit(0)
 
     if GEN_SAVED_DATA:  # Scan the folders and save the data (saved data used for debugging)
         print '\nGenerating npm-dev catalog'
