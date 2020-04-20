@@ -244,13 +244,16 @@ def main():
 
     VERBOSE = os.getenv("VERBOSE")
     SKIP_LIST = os.getenv("SKIP_LIST")
+    MAX_DAYS = os.getenv("MAX_DAYS")
     print 'Flags..'
     print 'DAYS: ', MAX_DAYS
+    print 'DAYS type: ', type(MAX_DAYS)
     print 'VERBOSE: ', VERBOSE
     print 'DO_DELETE: ', DO_DELETE
     print 'WAIT: ', WAIT
     print 'USER: ', user
     print 'PASS: ', passwd
+    print 'SKIP type: ', type(SKIP_LIST)
     print 'SKIP: ', SKIP_LIST
     sys.exit(0)
 
