@@ -7,7 +7,7 @@ pipeline {
     stages {
     stage ('Clean npm-dev artifactory repo') {
       steps {
-        options=""
+ //       options=""
         echo 'Calling script'
  //       if (${params.MAX_DAYS}) {
  //         options = "${options} -d ${params.MAX_DAYS}"
