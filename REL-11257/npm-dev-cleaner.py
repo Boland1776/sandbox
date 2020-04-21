@@ -233,6 +233,7 @@ def parse_options():
     tmp = os.getenv("VERBOSE")
     if tmp and tmp.lower() in ['true', '1']:
         VERBOSE = True
+        print 'VERBOSE is set in ENV'
 
     tmp = os.getenv("KEEP_FILES")
     if tmp and tmp.lower() in ['true', '1']:
@@ -280,6 +281,8 @@ def lprint(msg, wait):
         else:
             print msg               # Else, just print message
     else:
+        print 'lprint verbose bot set'
+        print 'MSG: "%s"' % msg
         if re.match(r'* Warning', msg, re.IGNORECASE):
             print msg
     sys.stdout.flush()              # One final flush for the rest
