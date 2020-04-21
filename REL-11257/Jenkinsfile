@@ -1,11 +1,10 @@
 pipeline {
-//  agent {
-//        node {
-//            label 'v2_builder'
-//        }
-//    }
+  agent {
+        node {
+            label 'brick' //v2_builder'
+        }
+    }
     stages {
-      node ('brick') {
       stage ('Clean npm-dev artifactory repo') {
         steps {
           echo 'Calling script'
@@ -14,6 +13,5 @@ pipeline {
             }
          }
       }
-    }
-  }
+   }
 }
