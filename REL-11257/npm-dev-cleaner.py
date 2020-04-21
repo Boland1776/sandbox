@@ -377,22 +377,18 @@ def main():
     for dev_file in sorted(dev_catalog):    # Loop through the development files
         lprint ('Processing: %s' % dev_file, False)
         if not dev_file in rel_catalog:     # If dev file is NOT in the release catalog, check date, etc
-#            lprint ('  file is not in release catalog', False)
             tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', dev_catalog[dev_file])    # Strip off timezone
             tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
             file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
             file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
             file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
             delta         = todays_date - file_date
-#            lprint ('  file is %d days old (%d is cutoff)' % (delta.days, MAX_DAYS), False)
 
             if delta.days > MAX_DAYS:
                 lprint ('  -> file is not in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
-#                lprint ('    ( > %d days old) .. mark for removal' % MAX_DAYS, False)
                 delete.append(dev_file)         # Put this file in the delete list
             else:
                 lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
-#                lprint ('    ( <= %d days old) .. keeping it' % MAX_DAYS, False)
                 keep.append(dev_file)           # Put this file in the keep list
         else:
             lprint ('    -> file is listed in release catalog and will be kept', False)
@@ -411,6 +407,10 @@ def main():
 
     if CLEAN:      # Clean temp files unless user said 'no'
         cleanup_temp_files()
+    else:
+        lprint ('\nKeeping temporary files', False)
+
+    lprint ('\nJob complete\n', False)
 
 if __name__ == '__main__':
     main()
