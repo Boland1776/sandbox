@@ -218,7 +218,7 @@ def delete_files(lst, u, p):
             lprint ('deleteing "%s"' % file, False)
             resp = requests.delete(file, auth=(u, p))
         else:
-            lprint ('Issuing "get" for "%s"' % file, False)
+            lprint ('"get" "%s"' % file, False)
             resp = requests.get(file, auth=(u, p))
 
         if not resp.status_code <= 200 <= 299:  # Success values (200-299)
@@ -233,7 +233,7 @@ def parse_options():
     tmp = os.getenv("VERBOSE")
     if tmp and tmp.lower() in ['true', '1']:
         VERBOSE = True
-        
+
     tmp = os.getenv("KEEP_FILES")
     if tmp and tmp.lower() in ['true', '1']:
         CLEAN = False
@@ -341,9 +341,9 @@ def main():
         os.environ["SKIP_LIST"] = ','.join(SKIP_LIST)
         if not GEN_SAVED_DATA:
             print 'Warning: "-S" should not be used with "-g" (since we will be generating new data)'
-            
+
     parse_options()     # Parse any env-var options Jenkins sent
-    
+
     if DO_DELETE:
         lprint ('** Delete option is set **', True)
 
@@ -354,6 +354,7 @@ def main():
         if len(SKIP_LIST):
             msg = ', '.join(SKIP_LIST)
             lprint ('Folders to skip: %s' % msg, False)
+            lprint ('----------------------------------------------------------------------------------------------', False)
 
         dev_base = collect_data(DEV_PATH)
         traverse('dev', dev_base, dev_catalog)
@@ -376,28 +377,35 @@ def main():
     for dev_file in sorted(dev_catalog):    # Loop through the development files
         lprint ('Processing: %s' % dev_file, False)
         if not dev_file in rel_catalog:     # If dev file is NOT in the release catalog, check date, etc
-            lprint ('  file is not in rel_catalog', False)
+#            lprint ('  file is not in release catalog', False)
             tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', dev_catalog[dev_file])    # Strip off timezone
             tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
             file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
             file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
             file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
             delta         = todays_date - file_date
-            lprint ('  file is %d days old' % delta.days, False)
+#            lprint ('  file is %d days old (%d is cutoff)' % (delta.days, MAX_DAYS), False)
 
             if delta.days > MAX_DAYS:
-                lprint ('    ( > %d days old) .. mark for removal' % MAX_DAYS, False)
+                lprint ('  -> file is not in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
+#                lprint ('    ( > %d days old) .. mark for removal' % MAX_DAYS, False)
                 delete.append(dev_file)         # Put this file in the delete list
             else:
-                lprint ('    ( <= %d days old) .. keeping it' % MAX_DAYS, False)
+                lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
+#                lprint ('    ( <= %d days old) .. keeping it' % MAX_DAYS, False)
                 keep.append(dev_file)           # Put this file in the keep list
         else:
-            lprint ('    is listed in release catalog and will be kept', False)
+            lprint ('    -> file is listed in release catalog and will be kept', False)
             keep.append(dev_file)           # Put this file in the keep list
 
+    lprint ('', False)
     write_list(KEEP_FILES, keep)
     write_list(DELETE_FILES, delete)
     write_list(SKIPPED_FILES, skipped)
+    lprint ('', False)
+    if not DO_DELETE:
+        lprint ('DO_DELETE was NOT issued!  I will perform a "get" operation to test functionality.', False)
+    lprint ('', False)
 
     delete_files(delete, user, passwd)
 
