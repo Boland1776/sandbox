@@ -275,7 +275,7 @@ def lprint(msg, wait):
                 raw_input(msg)      # So, wait for user
             else:                   # WAIT not issued
                 print msg           # Show message
-                timer.sleep(10)     # And delay (instead of wait)
+                time.sleep(10)     # And delay (instead of wait)
         else:
             print msg               # Else, just print message
     else:
