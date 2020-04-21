@@ -275,12 +275,14 @@ def lprint(msg, wait):
                 raw_input(msg)      # So, wait for user
             else:                   # WAIT not issued
                 print msg           # Show message
-                time.sleep(10)     # And delay (instead of wait)
+                sys.stdout.flush()  # Make sure we flush the msg before sleeping
+                time.sleep(10)      # And delay (instead of wait)
         else:
             print msg               # Else, just print message
     else:
         if re.match(r'* Warning', msg, re.IGNORECASE):
             print msg
+    sys.stdout.flush()              # One final flush for the rest
 
 
 def main():
