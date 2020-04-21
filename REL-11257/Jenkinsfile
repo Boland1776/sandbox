@@ -1,7 +1,7 @@
 pipeline {
   agent {
         node {
-            label 'v2_builder'
+            label 'brick' //v2_builder'
         }
     }
     stages {
