@@ -281,9 +281,9 @@ def lprint(msg, wait):
         else:
             print msg               # Else, just print message
     else:
-        print 'lprint verbose bot set'
+        print 'lprint verbose not set'
         print 'MSG: "%s"' % msg
-        if re.match(r'* Warning', msg, re.IGNORECASE):
+        if re.match(r'\* Warning', msg, re.IGNORECASE):
             print msg
     sys.stdout.flush()              # One final flush for the rest
 
