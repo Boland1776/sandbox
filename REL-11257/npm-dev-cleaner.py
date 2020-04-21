@@ -18,6 +18,7 @@ import time
 GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we catalog files saved)
 
 # User options (some are only available via CLI)
+CLEAN     = True     # Clean any files I create (except the log)
 VERBOSE   = False
 TEST_MODE = False    # Do not set when calling from pipeline
 WAIT      = False    # Wait for user if true.
@@ -227,13 +228,17 @@ def delete_files(lst, u, p):
 def parse_options():
     """Parse options that are set in the environment (from Jenkins)"""
 
-    global VERBOSE, SKIP_LIST, MAX_DAYS
+    global VERBOSE, SKIP_LIST, MAX_DAYS, CLEAN
 
     tmp = os.getenv("VERBOSE")
     if tmp and tmp.lower() in ['true', '1']:
         VERBOSE = True
-    tmp = os.getenv("SKIP_LIST")
+        
+    tmp = os.getenv("KEEP_FILES")
+    if tmp and tmp.lower() in ['true', '1']:
+        CLEAN = False
 
+    tmp = os.getenv("SKIP_LIST")
     if tmp:
         SKIP_LIST = tmp.split(',')
 
@@ -322,6 +327,8 @@ def main():
         os.environ["DO_DELETE"] = "1"
     if args.verbose:
         os.environ["VERBOSE"] = "1"
+    if args.clean:
+        os.environ["KEEP_FILES"] = "1"
     if args.wait:
         WAIT = True
     if args.generate:
@@ -391,7 +398,7 @@ def main():
 
     delete_files(delete, user, passwd)
 
-    if not args.clean:      # Clean temp files unless user said 'no'
+    if CLEAN:      # Clean temp files unless user said 'no'
         cleanup_temp_files()
 
 if __name__ == '__main__':
