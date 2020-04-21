@@ -339,10 +339,11 @@ def main():
         os.environ["SKIP_LIST"] = ','.join(SKIP_LIST)
         if not GEN_SAVED_DATA:
             print 'Warning: "-S" should not be used with "-g" (since we will be generating new data)'
+            
+    parse_options()     # Parse any env-var options Jenkins sent
+    
     if DO_DELETE:
         lprint ('** Delete option is set **', True)
-
-    parse_options()     # Parse any env-var options Jenkins sent
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
