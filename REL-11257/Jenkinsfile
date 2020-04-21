@@ -4,8 +4,8 @@ pipeline {
 //            label 'v2_builder'
 //        }
 //    }
-  node ('brick') {
     stages {
+      node ('brick') {
       stage ('Clean npm-dev artifactory repo') {
         steps {
           echo 'Calling script'
