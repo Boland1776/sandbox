@@ -9,7 +9,7 @@ pipeline {
         steps {
           echo 'Calling script'
             withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
-              sh "python REL-11257/npm-dev-cleaner.py -u ${NAME} -p ${WORD}"
+              sh "python npm-dev-cleaner.py -u ${NAME} -p ${WORD}"
             }
          }
       }
