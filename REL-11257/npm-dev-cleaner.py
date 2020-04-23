@@ -1,8 +1,10 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
+#
+# Version 1.0 (04/23/2020)
 
 # Called by Jenkins pipeline
-# As of now.. http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/npm-test
+# http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
 
 import json
 import re
@@ -229,42 +231,49 @@ def delete_files(lst, u, p):
     """
     user_skip = False
 
+    lprint('Deleting files..', False)
     for f in lst:
         file = DEV_PATH + f
 
         if DO_DELETE:
-            lprint('  formatting path..', False)
+#            lprint('  formatting path for delete ..', False)
 
             # To actually delete the file we must reformat the path we aquired and remove the string '/api/storage'
             # from the path. If we do not do this calls to delete will return "400" (bad request).
             file = file.replace('/api/storage', '')
+            lprint('  "%s"' % f, False) # Show the file to be deleted
 
-            if INTERACTIVE:
+            if INTERACTIVE:     # VERBOSE is set to True when this is selected
                 user_skip = False
                 lprint ('%s will be deleted next' % file, False)
                 ans = raw_input('Ok to delete [y/n/q]: ')
                 if 'y' in ans:
                     lprint ('deleteing "%s"' % file, False)
-                    resp = requests.get(file, auth=(u, p))
-#                    resp = requests.delete(file, auth=(u, p))
+#                    resp = requests.get(file, auth=(u, p))
+                    resp = requests.delete(file, auth=(u, p))
                 elif 'q' in ans:
                     return
                 else:
                     lprint ('skipping "%s"' % file, False)
                     user_skip = True
             elif DELETE_ONE:
-                lprint ('DELETE_ONE is set .. exitting', False)
-                resp = requests.get(file, auth=(u, p))
-#                resp = requests.delete(file, auth=(u, p))
+#                resp = requests.get(file, auth=(u, p))
+                resp = requests.delete(file, auth=(u, p))
+                if not 200 <= resp.status_code <= 299:  # Success values (200-299)
+                    lprint ('* Warning: %s' % resp, False)
+                    lprint ('  a non-success value was returned!', True)
+                else:
+                    lprint ('request status returned: %d' % resp.status_code, True)
+
                 return
             else:
                 lprint ('deleteing "%s"' % file, False)
-                resp = requests.get(file, auth=(u, p))
+#                resp = requests.get(file, auth=(u, p))
+                resp = requests.delete(file, auth=(u, p))
         else:
             lprint ('"get" "%s"' % file, False)
             resp = requests.get(file, auth=(u, p))
 
-        print 'user skip: ', user_skip
         if user_skip == False:
             if not 200 <= resp.status_code <= 299:  # Success values (200-299)
                 lprint ('* Warning: %s' % resp, False)
@@ -330,7 +339,7 @@ def lprint(msg, wait):
             else:                   # WAIT not issued
                 print msg           # Show message
                 sys.stdout.flush()  # Make sure we flush the msg before sleeping
-                time.sleep(10)      # And delay (instead of wait)
+                time.sleep(5)       # And delay (instead of wait)
         else:
             print msg               # Else, just print message
     else:
@@ -342,7 +351,7 @@ def lprint(msg, wait):
 def main():
     """Main loop of script"""
 
-    global MAX_DAYS, VERBOSE, INTERACTIVE, GEN_SAVED_DATA, SKIP_LIST, WAIT, DO_DELETE
+    global MAX_DAYS, VERBOSE, INTERACTIVE, GEN_SAVED_DATA, SKIP_LIST, WAIT, DO_DELETE, CLEAN
     global skipped
 
     rel_catalog = dict()
@@ -378,7 +387,7 @@ def main():
         INTERACTIVE = True  # Confirm each delete
         VERBOSE = True      # We have to see what we're doing
         WAIT = True         # Wait for user input
-        CLEAN = False       # Sont delete files
+        CLEAN = False       # Dont delete files
     if args.delete_one:
         os.environ["DELETE_ONE"] = "1"
     if args.delete:
@@ -404,6 +413,17 @@ def main():
         lprint ('** Delete option is set **', True)
         if DELETE_ONE:
             lprint ('** Delete one file and exit is also set **', False)
+
+    # Log, and maybe show, which options were called
+    lprint ('\nScript called with these options..', False)
+    lprint ('    VERBOSE: %s' % VERBOSE, False)
+    lprint ('  DO_DELETE: %s' % DO_DELETE, False)
+    lprint (' DELETE_ONE: %s' % DELETE_ONE, False)
+    lprint ('INTERACTIVE: %s' % INTERACTIVE, False)
+    lprint ('   MAX_DAYS: %d' % MAX_DAYS, False)
+    lprint ('CLEAN UP FILES: %s' % CLEAN, False)
+    lprint (' SKIP_LIST: %s' % SKIP_LIST, False)
+    lprint ('', False)
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
