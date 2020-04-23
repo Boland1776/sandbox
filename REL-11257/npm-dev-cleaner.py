@@ -26,7 +26,7 @@ INTERACTIVE = False # Have user confirm deletion for each file (for debugging) :
 VERBOSE   = False   # Show what's being done : CLI and Jenkins
 WAIT      = False   # Wait for user if true. : CLI
 DO_DELETE = False   # Saftey measure. You MUST call script with "-D" to actually delete : CLI and Jenkins
-MAX_DAYS  = 30      # Delete files older than this value : CLI and Jenkins
+MAX_DAYS  = 60      # Delete files older than this value : CLI and Jenkins
 
 # This is what we process
 BASE_PATH = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
