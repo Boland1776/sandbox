@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.3 (04/24/2020)
+# Version 1.1.4 (04/24/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -29,48 +29,36 @@ LOG_DATA  = True
 VERBOSE   = False   # Show what's being done : CLI and Jenkins
 WAIT      = False   # Wait for user if true. : CLI
 DO_DELETE = False   # Saftey measure. You MUST call script with "-D" to actually delete : CLI and Jenkins
-MAX_DAYS  = 60      # Delete files older than this value : CLI and Jenkins
+MAX_DAYS  = 60      # Delete files older than this many days : CLI and Jenkins
 USE_MODIFIED_TIME = True
 USE_CREATED_TIME = False
 
 # This is what we process
 BASE_PATH = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
-DEV_PATH  = BASE_PATH + '/npm-dev'
+DEV_PATH  = BASE_PATH + '/npm-dev'      # Maybe future versions will have these be a param from Jenkins
 REL_PATH  = BASE_PATH + '/npm-release'
 
 # Misc files generated
 LOG_FILE     = 'log'                # timestamp and ".txt" are appended to this
-DEV_CATALOG  = "dev_catalog.txt"    # Where I store npm-dev results
-REL_CATALOG  = "release_catalog.txt"# Where I store npm-release results
+DEV_CATALOG  = 'dev_catalog.txt'    # Where I store npm-dev results
+REL_CATALOG  = 'release_catalog.txt'# Where I store npm-release results
 KEEP_FILES   = 'keepers.txt'        # Where I store files to keep
 DELETE_FILES = 'deleters.txt'       # Where I store files to delete
 SKIPPED_FILES = 'skipped.txt'       # Where I store files/folders to skip
 
 # Skip the following FOLDERS in the npm-dev repo
 # This list can be appended to via the "-S <list,of,folders>" option (comma seperated)
-SKIP_LIST    = ['.npm/@bullhorn-internal',
-                '.npm/@bullhorn',
-                '.npm/bh-elements',
-                '.npm/symphony-staffing',
-                '.npm/chomsky',
-                '.npm/galaxy-parser',
-                '.npm-generator-novo'
-                '@bullhorn-internal',
-                '@bullhorn',
-                'bh-elements',
-                'symphony-staffing',
-                'chomsky',
-                'galaxy-parser',
-                'generator-novo'
+SKIP_LIST    = ['.npm/@bullhorn-internal', '.npm/@bullhorn',     '.npm/bh-elements',
+                '.npm/symphony-staffing',  '.npm/chomsky',       '.npm/galaxy-parser',
+                '.npm-generator-novo',     '@bullhorn-internal', '@bullhorn',
+                'bh-elements',             'symphony-staffing',  'chomsky',
+                'galaxy-parser',           'generator-novo'
                ]
 
 # Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and package.json
 # This list can only be modified here (for now).
-DO_NOT_DEL_LIST = ['DONOTDELETE',
-                   'DO_NOT_DELETE',
-                   'DONTDELETE',
-                   'DONT_DELETE',
-                   'package.json'
+DO_NOT_DEL_LIST = ['DONOTDELETE',   'DO_NOT_DELETE',   'DONTDELETE',
+                   'DONT_DELETE',   'package.json'
                   ]
 
 tmp             = datetime.datetime.today()
@@ -102,13 +90,12 @@ def collect_data(uri):
             try:                                                        # Try and convert "out" data to JSON
                 data = json.loads(out)                                  # Ok, we converted to JSON
                 if 'errors' in data:                                    # Sometimes the curl worked but we get bad data
-                    lprint('JSON error!', False)                        # Show the error info
-                    lprint('JSON %s' % data, False)
+                    lprint('Curl request returned an error: %s' % data, False)  # Show the error returned
                     data = list()                                       # Return empty dict
             except ValueError as e:                                     # Those pesky files don't product any output :(
                 lprint('ERROR: ValuerError. Could not convert data to JSON', False) # So log it and move on
             except:                                                     # Grab all other exceptions here
-                lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)
+                lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)  # Get error from system
 
     return data         # Return the data dict (whether it has data or is None)
 
@@ -211,9 +198,9 @@ def read_data(file):
 
     return(dct) # Return the new dictionary
 
-# For debugging, so I don't log this
+# For debugging, so I don't log this output
 def show_catalog(cat):
-    """Show the catalog's dictionary"""
+    """ Show the catalog's dictionary """
 
     print '\nDisplay catalog, %d entries..' % len(cat)
     raw_input('Press Enter when ready to view')
@@ -223,7 +210,7 @@ def show_catalog(cat):
 #        print '%s :created on: %s' % (k, cat[k])
 
 def save_catalog(dct, file):
-    """Save the catalog dictionary (dct) to file"""
+    """ Save the catalog dictionary (dct) to file """
 
     lprint ('Saving catalog "%s"' % file, False)
     with open(file, 'w') as fo:
@@ -231,7 +218,7 @@ def save_catalog(dct, file):
             fo.write('%s|%s\n' % (k, dct[k]))
 
 def write_list(file, lst):
-    """Write a list to file"""
+    """ Write a list to file """
 
     lprint ('Writing list to %s' % file, False)
     with open(file, 'w') as file_ptr:
@@ -239,7 +226,7 @@ def write_list(file, lst):
             file_ptr.write('%s\n' % k)
 
 def delete_files(lst, u, p):
-    """Delete the files from the delete list.
+    """ Delete the files from the delete list.
         See: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes   for return codes
     """
     user_skip = False
@@ -249,7 +236,7 @@ def delete_files(lst, u, p):
 
         if DO_DELETE:
 
-            # To actually delete the file we must reformat the path we aquired and remove the string '/api/storage'
+            # To delete the file we must reformat the path aquired and remove the string '/api/storage'
             # from the path. If we do not do this calls to delete will return "400" (bad request).
             file = file.replace('/api/storage', '')
             lprint('  "%s"' % f, False) # Show the file to be deleted
@@ -260,7 +247,6 @@ def delete_files(lst, u, p):
                 ans = raw_input('Ok to delete [y/n/q]: ')
                 if 'y' in ans:
                     lprint ('deleteing "%s"' % file, False)
-#                    resp = requests.get(file, auth=(u, p))
                     resp = requests.delete(file, auth=(u, p))
                 elif 'q' in ans:
                     return
@@ -268,7 +254,6 @@ def delete_files(lst, u, p):
                     lprint ('skipping "%s"' % file, False)
                     user_skip = True
             elif DELETE_ONE:
-#                resp = requests.get(file, auth=(u, p))
                 resp = requests.delete(file, auth=(u, p))
                 if not 200 <= resp.status_code <= 299:  # Success values (200-299)
                     lprint ('* Warning: %s' % resp, False)
@@ -279,7 +264,6 @@ def delete_files(lst, u, p):
                 return
             else:
                 lprint ('deleteing "%s"' % file, False)
-#                resp = requests.get(file, auth=(u, p))
                 resp = requests.delete(file, auth=(u, p))
         else:
             lprint ('"get" "%s"' % file, False)
@@ -293,7 +277,7 @@ def delete_files(lst, u, p):
                 lprint ('request status returned: %d' % resp.status_code, False)
 
 def parse_options():
-    """Parse options that are set in the environment (from Jenkins)"""
+    """ Parse options that are set in the environment (from Jenkins) """
 
     global VERBOSE, SKIP_LIST, MAX_DAYS, CLEAN, DO_DELETE, DELETE_ONE
 
@@ -327,7 +311,7 @@ def parse_options():
         MAX_DAYS = int(tmp)
 
 def cleanup_temp_files():
-    """Clean up temp files"""
+    """ Clean up temp files """
 
     files = [KEEP_FILES, DELETE_FILES, SKIPPED_FILES, DEV_CATALOG, REL_CATALOG]
 
@@ -340,7 +324,7 @@ def cleanup_temp_files():
                 lprint ('  could not remove %s' % f, False)
 
 def lprint(msg, wait):
-    """Log and print a message"""
+    """ Log and print a message """
     global timestamp
 
     log_file =  LOG_FILE + '-' + timestamp + '.txt'
@@ -366,7 +350,7 @@ def lprint(msg, wait):
 
 
 def main():
-    """Main loop of script"""
+    """ Main loop of script """
 
     global MAX_DAYS, VERBOSE, INTERACTIVE, GEN_SAVED_DATA, SKIP_LIST, WAIT, DO_DELETE, CLEAN
     global skipped
