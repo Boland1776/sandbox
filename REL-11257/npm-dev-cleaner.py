@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1 (04/23/2020)
+# Version 1.1.1 (04/23/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -14,15 +14,18 @@ import argparse
 import requests
 import sys
 import time
+import subprocess
+import shlex
 
 # When set, we collect all the data via curl and save that data for future test runs. If the flag is False, we dont
 # run the "curl" and rely on the data saved (initially, these curls are taking 10's of minutes).
-GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we catalog files saved)
+GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we use saved catalog files)
 
 # User options (some are only available via CLI)
-CLEAN     = True    # Clean any files I create (except the log) : CLI and Jenkins
 DELETE_ONE = False  # Delete on file and exit : CLI and Jenkins (for now)
 INTERACTIVE = False # Have user confirm deletion for each file (for debugging) : CLI
+CLEAN     = True    # Clean any files I create (except the log) : CLI and Jenkins
+LOG_DATA  = True
 VERBOSE   = False   # Show what's being done : CLI and Jenkins
 WAIT      = False   # Wait for user if true. : CLI
 DO_DELETE = False   # Saftey measure. You MUST call script with "-D" to actually delete : CLI and Jenkins
@@ -38,12 +41,12 @@ REL_PATH  = BASE_PATH + '/npm-release'
 # Misc files generated
 LOG_FILE     = 'log'                # timestamp and ".txt" are appended to this
 DEV_CATALOG  = "dev_catalog.txt"    # Where I store npm-dev results
-REL_CATALOG  = "release_catalog.txt"# Where I store npm-releas results
+REL_CATALOG  = "release_catalog.txt"# Where I store npm-release results
 KEEP_FILES   = 'keepers.txt'        # Where I store files to keep
 DELETE_FILES = 'deleters.txt'       # Where I store files to delete
 SKIPPED_FILES = 'skipped.txt'       # Where I store files/folders to skip
 
-# Skip the following folders in the npm-dev repo
+# Skip the following FOLDERS in the npm-dev repo
 # This list can be appended to via the "-S <list,of,folders>" option (comma seperated)
 SKIP_LIST    = ['.npm/@bullhorn-internal',
                 '.npm/@bullhorn',
@@ -61,7 +64,7 @@ SKIP_LIST    = ['.npm/@bullhorn-internal',
                 'generator-novo'
                ]
 
-# Skip files that have this in the name. For now I skip variants of "DO_NOT_DELETE" in the file name
+# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and package.json
 # This list can only be modified here (for now).
 DO_NOT_DEL_LIST = ['DONOTDELETE',
                    'DO_NOT_DELETE',
@@ -86,27 +89,29 @@ def collect_data(uri):
 
     # Some file names have spaces and/or parenthesis and don't seem to play well with curl. I have tried escaping the
     # string with no luck. For now, a simpler solution is to wrap the uri in quotes. So I do that here
-    curl_str = 'curl "' + uri + '" -o ' + tmp_file + " > /dev/null 2>&1"
     lprint ('Processing: %s' % uri, False)
 
-    stat = os.system(curl_str)
-    if stat != 0:
-        msg = '* Warning: curl ' + uri + ' returned status: ' + stat
-        lprint (msg, True)
-        return data
-
-    # This is what I get with those files with spaces, etc
-    if os.stat(tmp_file).st_size == 0:
-        lprint ('* Warning: curl returned no output for %s' % uri, True)
-        return data
-
-    # Curl appears to have run so read the output and store in a dict
-    try:
-        with open(tmp_file) as file_in:
-            data = json.load(file_in)
-    except IOError:
-        lprint ('* Warning: could not read "%s"' % tmp_file, True)
-        sys.exit(1)
+    curl_str = 'curl "' + uri + '"'
+    args = shlex.split(curl_str)
+    with open(os.devnull, 'w') as DEV_NULL:
+        try:
+            out = subprocess.check_output(args, stderr=DEV_NULL)
+        except subprocess.CalledProcessError as e:
+            lprint('subprocess ERROR %s' % e.output, False)
+        except:
+            lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)
+        else:
+            try:
+                data = json.loads(out)
+                lprint ('JSON: %s ' % json.dumps(data, indent=4), False)
+                if 'errors' in data:
+                    lprint('JSON error!', False)
+                    lprint('JSON %s' % data, False)
+                    data = list()   # Return empty dict
+            except ValueError as e:
+                lprint('ERROR: ValuerError. Could not convert data to JSON', False)
+            except:
+                lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)
 
     return data
 
@@ -124,6 +129,7 @@ def traverse(repo_name, data, catalog):
         lprint ('* Warning: invalid repo name (%s)' % repo_name, True)
         return catalog
 
+    lprint ('Skipped len in traverse %d' % len(skipped), False)
     # If the data has a 'children' key then I need to process it further
     for c in data['children']:
 
@@ -153,26 +159,30 @@ def traverse(repo_name, data, catalog):
                 traverse(repo_name, new_data, catalog)  # traverse to the next level
             else:                                       # If not a folder, new_data contains the date info we need
 
-                # If a file name contans "DO_NOT_DELETE" (or some variant thereof) skip it
-                if re.findall(r"(?=("+'|'.join(DO_NOT_DEL_LIST)+r"))", c['uri']):
-                    lprint ('! skipping: %s' % c['uri'], True)              # Show file (only)
-                    skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path
-                    return(catalog)
+                if repo_name == 'dev':              # Only process items in dev catalog
+                    if len(DO_NOT_DEL_LIST) > 0:    # Make sure there is something to skip
+                # If a file name contans "DO_NOT_DELETE" (or some variant thereof), or 'package.json, skip it
+                        if re.findall(r"(?=("+'|'.join(DO_NOT_DEL_LIST)+r"))", c['uri']):
+                            lprint ('! skipping: %s' % c['uri'], False)             # Show file (only) for readability
+                            skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path
+                            return(catalog)
 
-                file = data['path'] + c['uri']          # File, relative to BASE
+                file = data['uri'] + c['uri']          # File, full path
 
                 # In some cases curl is returning no date info and I haven't been able to figure out why. It seems
                 # to occur on files with spaces and/or parenthesis in the file name. In any case, until I figure it
                 # out, I will mark the file as 'skipped'.
                 if len(new_data) == 0:
-                    msg = '! ignore: no date info found for: ' + data['uri'] + c['uri']
-                    lprint (msg, False)
-                    skipped.append('Null date: ' + data['uri'] + c['uri'])
+                    lprint ('! ignore: no date found (%s)' % file, False)
+                    if repo_name == 'dev':              # Only process items in dev catalog
+                        skipped.append('Null date: ' + data['uri'] + c['uri'])
                 else:
             # I think we should be uising the lastModified date instead of created date. Some files have a
             # created date of years ago (package.json) while its lastModified date is within a day of current date
-                    catalog[file] = new_data['lastModified'] # Save modified date in dict with <file> as key
-#                    catalog[file] = new_data['created']     # Save created date in dict with <file> as key
+                    if USE_MODIFIED_TIME:
+                        catalog[file] = new_data['lastModified'] # Save modified date in dict with <file> as key
+                    else:
+                        catalog[file] = new_data['created']      # Save created date in dict with <file> as key
 
     return(catalog)
 
@@ -239,8 +249,7 @@ def delete_files(lst, u, p):
     user_skip = False
 
     lprint('Deleting files..', False)
-    for f in lst:
-        file = DEV_PATH + f
+    for file in lst:
 
         if DO_DELETE:
 
@@ -285,7 +294,7 @@ def delete_files(lst, u, p):
                 lprint ('* Warning: %s' % resp, False)
                 lprint ('  a non-success value was returned!', True)
             else:
-                lprint ('request status returned: %d' % resp.status_code, True)
+                lprint ('request status returned: %d' % resp.status_code, False)
 
 def parse_options():
     """Parse options that are set in the environment (from Jenkins)"""
@@ -340,8 +349,9 @@ def lprint(msg, wait):
 
     log_file =  LOG_FILE + '-' + timestamp + '.txt'
 
-    with open(log_file, 'a') as lf:
-        lf.write(msg + '\n')
+    if LOG_DATA:
+        with open(log_file, 'a') as lf:
+            lf.write(msg + '\n')
 
     if VERBOSE:                     # Verbose is set
         if wait:                    # And we requested user input
@@ -469,6 +479,7 @@ def main():
         rel_catalog = read_data(REL_CATALOG)
         lprint ('%d files read from %s' % (len(rel_catalog), REL_CATALOG), True)
 
+    lprint ('Skipped prior to proc %d' % len(skipped), False)
 
     # Now that I have all the development and release files, with their creation dates, it's time to process them
     # Files > MAX_DAYS and are NOT in the release catalog can be deleted
@@ -495,6 +506,7 @@ def main():
     lprint ('', False)
     write_list(KEEP_FILES, keep)
     write_list(DELETE_FILES, delete)
+    lprint ('Skipped prior to save %d' % len(skipped), False)
     write_list(SKIPPED_FILES, skipped)
     lprint ('', False)
     if not DO_DELETE:
