@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.1 (04/23/2020)
+# Version 1.1.2 (04/24/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -31,7 +31,7 @@ WAIT      = False   # Wait for user if true. : CLI
 DO_DELETE = False   # Saftey measure. You MUST call script with "-D" to actually delete : CLI and Jenkins
 MAX_DAYS  = 60      # Delete files older than this value : CLI and Jenkins
 USE_MODIFIED_TIME = True
-USE_CREATED_TIME = False# ! USE_MODIFIED_TIME   # Which time stamp to use in calculation
+USE_CREATED_TIME = False
 
 # This is what we process
 BASE_PATH = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
@@ -93,27 +93,26 @@ def collect_data(uri):
 
     curl_str = 'curl "' + uri + '"'
     args = shlex.split(curl_str)
-    with open(os.devnull, 'w') as DEV_NULL:
-        try:
-            out = subprocess.check_output(args, stderr=DEV_NULL)
-        except subprocess.CalledProcessError as e:
-            lprint('subprocess ERROR %s' % e.output, False)
-        except:
-            lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)
-        else:
-            try:
-                data = json.loads(out)
-                lprint ('JSON: %s ' % json.dumps(data, indent=4), False)
-                if 'errors' in data:
-                    lprint('JSON error!', False)
+    with open(os.devnull, 'w') as DEV_NULL:                         # Open file descriptor to /dev/null
+        try:                                                        # Try and run the curl command
+            out = subprocess.check_output(args, stderr=DEV_NULL)    # If success, "out" has our data
+        except subprocess.CalledProcessError as e:                  # Report issues the process had
+            lprint('subprocess ERROR %s' % e.output, False)         # Print that exception here
+        except:                                                     # Grab all other exceptions here
+            lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)  # And try to show what caused the issue
+        else:                                                           # No exception, so continue processing..
+            try:                                                        # Try and convert "out" data to JSON
+                data = json.loads(out)                                  # Ok, we converte to JSON
+                if 'errors' in data:                                    # Sometimes the curl worked but we get bad data
+                    lprint('JSON error!', False)                        # Show the error info
                     lprint('JSON %s' % data, False)
-                    data = list()   # Return empty dict
-            except ValueError as e:
-                lprint('ERROR: ValuerError. Could not convert data to JSON', False)
-            except:
+                    data = list()                                       # Return empty dict
+            except ValueError as e:                                     # Those pesky files don't product any output :(
+                lprint('ERROR: ValuerError. Could not convert data to JSON', False) # So log it and move on
+            except:                                                     # Grab all other exceptions here
                 lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)
 
-    return data
+    return data         # Return the data dict (whether it has data or is None)
 
 def traverse(repo_name, data, catalog):
     """ Recursively traverse through folders looking for files. """
