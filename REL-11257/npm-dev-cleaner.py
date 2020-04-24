@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.2 (04/24/2020)
+# Version 1.1.3 (04/24/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -83,16 +83,14 @@ skipped = list()
 def collect_data(uri):
     """ Collect URI data via curl and return output in a dict.  """
 
-    tmp_file = './.tempfile.txt'
-
     data = list()
 
     # Some file names have spaces and/or parenthesis and don't seem to play well with curl. I have tried escaping the
     # string with no luck. For now, a simpler solution is to wrap the uri in quotes. So I do that here
+    curl_str = 'curl "' + uri + '"'
     lprint ('Processing: %s' % uri, False)
 
-    curl_str = 'curl "' + uri + '"'
-    args = shlex.split(curl_str)
+    args = shlex.split(curl_str)                                    # Convert cmd to shell-like syntax
     with open(os.devnull, 'w') as DEV_NULL:                         # Open file descriptor to /dev/null
         try:                                                        # Try and run the curl command
             out = subprocess.check_output(args, stderr=DEV_NULL)    # If success, "out" has our data
@@ -102,7 +100,7 @@ def collect_data(uri):
             lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)  # And try to show what caused the issue
         else:                                                           # No exception, so continue processing..
             try:                                                        # Try and convert "out" data to JSON
-                data = json.loads(out)                                  # Ok, we converte to JSON
+                data = json.loads(out)                                  # Ok, we converted to JSON
                 if 'errors' in data:                                    # Sometimes the curl worked but we get bad data
                     lprint('JSON error!', False)                        # Show the error info
                     lprint('JSON %s' % data, False)
@@ -128,7 +126,6 @@ def traverse(repo_name, data, catalog):
         lprint ('* Warning: invalid repo name (%s)' % repo_name, True)
         return catalog
 
-    lprint ('Skipped len in traverse %d' % len(skipped), False)
     # If the data has a 'children' key then I need to process it further
     for c in data['children']:
 
@@ -332,7 +329,7 @@ def parse_options():
 def cleanup_temp_files():
     """Clean up temp files"""
 
-    files = ['./.tempfile.txt', KEEP_FILES, DELETE_FILES, SKIPPED_FILES, DEV_CATALOG, REL_CATALOG]
+    files = [KEEP_FILES, DELETE_FILES, SKIPPED_FILES, DEV_CATALOG, REL_CATALOG]
 
     for f in files:
         if os.path.exists(f):
