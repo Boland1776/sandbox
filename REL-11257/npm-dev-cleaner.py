@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.0 (04/23/2020)
+# Version 1.1 (04/23/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -27,6 +27,8 @@ VERBOSE   = False   # Show what's being done : CLI and Jenkins
 WAIT      = False   # Wait for user if true. : CLI
 DO_DELETE = False   # Saftey measure. You MUST call script with "-D" to actually delete : CLI and Jenkins
 MAX_DAYS  = 60      # Delete files older than this value : CLI and Jenkins
+USE_MODIFIED_TIME = True
+USE_CREATED_TIME = False# ! USE_MODIFIED_TIME   # Which time stamp to use in calculation
 
 # This is what we process
 BASE_PATH = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
@@ -64,7 +66,8 @@ SKIP_LIST    = ['.npm/@bullhorn-internal',
 DO_NOT_DEL_LIST = ['DONOTDELETE',
                    'DO_NOT_DELETE',
                    'DONTDELETE',
-                   'DONT_DELETE'
+                   'DONT_DELETE',
+                   'package.json'
                   ]
 
 tmp             = datetime.datetime.today()
@@ -139,7 +142,6 @@ def traverse(repo_name, data, catalog):
         # Create the full path (new_path) with child name. If it has a 'folder' key we traverse deeper. If not, this
         # must be a file and I obtain the creation date from the <new_path>
         new_path = use_repo + data['path'] + c['uri']
-#        new_path = data['uri'] + c['uri']
         new_data = collect_data(new_path)               # Get data on new path
 
         # If nothing is returned that's an issue. Add it to the 'skip' list and log it as needing "Attention"
@@ -167,7 +169,10 @@ def traverse(repo_name, data, catalog):
                     lprint (msg, False)
                     skipped.append('Null date: ' + data['uri'] + c['uri'])
                 else:
-                    catalog[file] = new_data['created']     # Save created date in dict with <file> as key
+            # I think we should be uising the lastModified date instead of created date. Some files have a
+            # created date of years ago (package.json) while its lastModified date is within a day of current date
+                    catalog[file] = new_data['lastModified'] # Save modified date in dict with <file> as key
+#                    catalog[file] = new_data['created']     # Save created date in dict with <file> as key
 
     return(catalog)
 
@@ -207,7 +212,9 @@ def show_catalog(cat):
     print '\nDisplay catalog, %d entries..' % len(cat)
     raw_input('Press Enter when ready to view')
     for k in sorted(cat):
-        print '%s :created on: %s' % (k, cat[k])
+        print '%9s :: %s' % (cat[k], k)
+#        print '%s :lastModifed on: %s' % (k, cat[k])
+#        print '%s :created on: %s' % (k, cat[k])
 
 def save_catalog(dct, file):
     """Save the catalog dictionary (dct) to file"""
@@ -236,7 +243,6 @@ def delete_files(lst, u, p):
         file = DEV_PATH + f
 
         if DO_DELETE:
-#            lprint('  formatting path for delete ..', False)
 
             # To actually delete the file we must reformat the path we aquired and remove the string '/api/storage'
             # from the path. If we do not do this calls to delete will return "400" (bad request).
@@ -302,6 +308,11 @@ def parse_options():
     if tmp and tmp.lower() in ['true', '1']:
         CLEAN = False
 
+    tmp = os.getenv("USE_CREATED_TIME")
+    if tmp and tmp.lower() in ['true', '1']:
+        USE_CREATED_TIME = True
+        USE_MODIFIED_DATE = False
+
     tmp = os.getenv("SKIP_LIST")
     if tmp:
         SKIP_LIST = tmp.split(',')
@@ -339,7 +350,7 @@ def lprint(msg, wait):
             else:                   # WAIT not issued
                 print msg           # Show message
                 sys.stdout.flush()  # Make sure we flush the msg before sleeping
-                time.sleep(5)       # And delay (instead of wait)
+                time.sleep(2)       # And delay (instead of wait)
         else:
             print msg               # Else, just print message
     else:
@@ -363,7 +374,8 @@ def main():
     # These are only used for running on CLI. Jenkins passes its params (except creds) via env-vars in OS
     parser = argparse.ArgumentParser(description='NPM artifact cleaner')
     parser.add_argument('-d', '--days', help='Remove files older than this value', type=int)
-    parser.add_argument('-c', '--clean', help='Dont cleanup temp files', action='store_true')
+    parser.add_argument('-c', '--create_time', help='Use file created time (instead of lastModified)', action='store_true')
+    parser.add_argument('-k', '--keep_file', help='Dont keep_file temp files', action='store_true')
     parser.add_argument('-o', '--delete_one', help='Delete one file and exit', action='store_true')
     parser.add_argument('-i', '--interactive', help='User confrims each delete', action='store_true')
     parser.add_argument('-v', '--verbose', help='Be verbose in processing', action='store_true')
@@ -394,8 +406,10 @@ def main():
         os.environ["DO_DELETE"] = "1"
     if args.verbose:
         os.environ["VERBOSE"] = "1"
-    if args.clean:
+    if args.keep_file:
         os.environ["KEEP_FILES"] = "1"
+    if args.create_time:
+        os.environ["USE_CREATED_TIME"] = "1"
     if args.wait:
         WAIT = True
     if args.generate:
@@ -416,14 +430,18 @@ def main():
 
     # Log, and maybe show, which options were called
     lprint ('\nScript called with these options..', False)
+    lprint ('       WAIT: %s' % WAIT, False)
     lprint ('    VERBOSE: %s' % VERBOSE, False)
     lprint ('  DO_DELETE: %s' % DO_DELETE, False)
     lprint (' DELETE_ONE: %s' % DELETE_ONE, False)
     lprint ('INTERACTIVE: %s' % INTERACTIVE, False)
     lprint ('   MAX_DAYS: %d' % MAX_DAYS, False)
-    lprint ('CLEAN UP FILES: %s' % CLEAN, False)
-    lprint (' SKIP_LIST: %s' % SKIP_LIST, False)
-    lprint ('', False)
+    lprint ('   CLEAN UP FILES: %s' % CLEAN, False)
+    lprint (' USE_CREATED_TIME: %s' % USE_CREATED_TIME, False)
+    lprint ('USE_MODIFIED_TIME: %s' % USE_MODIFIED_TIME, False)
+    lprint ('\n SKIP_LIST: %s' % SKIP_LIST, False)
+    lprint ('\nSKIP_FILES: %s' % DO_NOT_DEL_LIST, False)
+    lprint ('', True)
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
@@ -434,7 +452,9 @@ def main():
             lprint ('Folders to skip: %s' % msg, False)
             lprint ('----------------------------------------------------------------------------------------------', False)
 
+        lprint ('Call collect_data(DEV_PATH)', False)
         dev_base = collect_data(DEV_PATH)
+        lprint ('Call traverse("dev", dev_base, dev_catalog)', False)
         traverse('dev', dev_base, dev_catalog)
         save_catalog(dev_catalog, DEV_CATALOG)
 
@@ -478,10 +498,11 @@ def main():
     write_list(SKIPPED_FILES, skipped)
     lprint ('', False)
     if not DO_DELETE:
-        lprint ('DO_DELETE was NOT issued!  I will perform a "get" operation to test functionality.', False)
-    lprint ('', False)
+        lprint ('File deletion skipped', False)
+    else:
+        delete_files(delete, user, passwd)
 
-    delete_files(delete, user, passwd)
+    lprint ('', False)
 
     if CLEAN:      # Clean temp files unless user said 'no'
         cleanup_temp_files()
