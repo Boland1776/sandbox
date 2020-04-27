@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.4 (04/24/2020)
+# Version 1.1.5 (04/27/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -85,7 +85,7 @@ def collect_data(uri):
         except subprocess.CalledProcessError as e:                  # Report issues the process had
             lprint('subprocess ERROR %s' % e.output, False)         # Print that exception here
         except:                                                     # Grab all other exceptions here
-            lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)  # And try to show what caused the issue
+            lprint('Unknown ERROR: Sys: %s' % sys.exc_info()[0], False) # And try to show what caused the issue
         else:                                                           # No exception, so continue processing..
             try:                                                        # Try and convert "out" data to JSON
                 data = json.loads(out)                                  # Ok, we converted to JSON
@@ -95,7 +95,7 @@ def collect_data(uri):
             except ValueError as e:                                     # Those pesky files don't product any output :(
                 lprint('ERROR: ValuerError. Could not convert data to JSON', False) # So log it and move on
             except:                                                     # Grab all other exceptions here
-                lprint('Unknown ERROR: Sys: %s', sys.exc_info()[0], False)  # Get error from system
+                lprint('Unknown ERROR: Sys: %s' % sys.exc_info()[0], False)  # Get error from system
 
     return data         # Return the data dict (whether it has data or is None)
 
