@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.5 (04/27/2020)
+# Version 1.1.6 (04/27/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -239,7 +239,7 @@ def delete_files(lst, u, p):
             # To delete the file we must reformat the path aquired and remove the string '/api/storage'
             # from the path. If we do not do this calls to delete will return "400" (bad request).
             file = file.replace('/api/storage', '')
-            lprint('  "%s"' % f, False) # Show the file to be deleted
+            lprint('  "%s"' % file, False) # Show the file to be deleted
 
             if INTERACTIVE:     # VERBOSE is set to True when this is selected
                 user_skip = False
