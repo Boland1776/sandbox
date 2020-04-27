@@ -1,17 +1,22 @@
 pipeline {
-  agent {
-        node {
-            label 'brick' //v2_builder'
-        }
+  agent{
+    node {
+      label 'brick'
     }
-    stages {
-      stage ('Clean npm-dev artifactory repo') {
-        steps {
-          echo 'Calling script'
-            withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
-              sh "python REL-11257/npm-dev-cleaner.py -u ${NAME} -p ${WORD}"
-            }
-         }
+  }
+  stages {
+    stage ('Execute cleanup script') {
+      steps {
+        echo 'Begin cleanup'
+        withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
+          sh "python REL-11257/npm-dev-cleaner.py -u ${NAME} -p ${WORD}"
+        }
       }
-   }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'log*.txt', fingerprint: true
+    }
+  }
 }
