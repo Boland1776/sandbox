@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.9 (05/05/2020)
+# Version 1.1.10 (05/05/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -22,6 +22,9 @@ import shlex
 # When set, we collect all the data via curl and save that data for future test runs. If the flag is False, we dont
 # run the "curl" and rely on the data saved (initially, these curls are taking 10's of minutes).
 GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we use saved catalog files)
+
+HEADER1 = "=" * 80
+HEADER2 = "#" * 80
 
 # User options (some are only available via CLI)
 DELETE_ONE = False  # Delete on file and exit : CLI and Jenkins (for now)
@@ -86,19 +89,19 @@ def collect_data(uri):
         try:                                                        # Try and run the curl command
             out = subprocess.check_output(args, stderr=DEV_NULL)    # If success, "out" has our data
         except subprocess.CalledProcessError as e:                  # Report issues the process had
-            lprint('subprocess ERROR %s' % e.output, False)         # Print that exception here
+            lprint('! subprocess ERROR %s' % e.output, False)         # Print that exception here
         except:                                                     # Grab all other exceptions here
-            lprint('Unknown ERROR: Sys: %s' % sys.exc_info()[0], False) # And try to show what caused the issue
+            lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False) # And try to show what caused the issue
         else:                                                           # No exception, so continue processing..
             try:                                                        # Try and convert "out" data to JSON
                 data = json.loads(out)                                  # Ok, we converted to JSON
                 if 'errors' in data:                                    # Sometimes the curl worked but we get bad data
-                    lprint('Curl request returned an error: %s' % data, False)  # Show the error returned
+                    lprint('! ERROR: Curl request returned: %s' % data, False)  # Show the error returned
                     data = list()                                       # Return empty dict
             except ValueError as e:                                     # Those pesky files don't product any output :(
-                lprint('ERROR: ValuerError. Could not convert data to JSON', False) # So log it and move on
+                lprint('! ValueError: Could not convert data to JSON', False) # So log it and move on
             except:                                                     # Grab all other exceptions here
-                lprint('Unknown ERROR: Sys: %s' % sys.exc_info()[0], False)  # Get error from system
+                lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False)  # Get error from system
 
     return data         # Return the data dict (whether it has data or is None)
 
@@ -229,25 +232,29 @@ def write_list(file, lst):
         # Since we sort the list when we write I can't merely insert these comments into the list. I must write them to
         # the file then write the sorted data behind it.
         if file == SKIPPED_FILES:
-            file_ptr.write("# These files were skipped because..\n")
+            file_ptr.write("%s\n" % HEADER2)
+            file_ptr.write("# These files were skipped (will not be removed) due to one or more of the following ..\n")
             file_ptr.write("# 1) There was an issue processing the file date\n")
-            file_ptr.write("# 2) The folder/file matches one of these names..\n")
-            tmp = '# {}'.format(', '.join(DO_NOT_DEL_LIST))
+            file_ptr.write("# 2) The file matches one of these names..\n")
+            tmp = '#      {}'.format(', '.join(DO_NOT_DEL_LIST))
             file_ptr.write('%s\n' % tmp)
-            file_ptr.write("#\n# 3) The folder/file matches one of these names..\n")
-            tmp = '# {}'.format(', '.join(SKIP_LIST))
+            file_ptr.write("#\n# 3) The folder matches one of these names..\n")
+            tmp = '#      {}'.format(', '.join(SKIP_LIST))
             file_ptr.write('%s\n' % tmp)
-            file_ptr.write("#\n################################################\n")
+            file_ptr.write("#\n%s\n" % HEADER2)
         elif file == KEEP_FILES:
-            file_ptr.write("# These files were NOT found in the release repo but are < %d days old (will be kept)\n" % MAX_DAYS)
-            file_ptr.write("##########################################################################################\n")
+            file_ptr.write("%s\n" % HEADER2)
+            file_ptr.write("# These files were not found in the release repo but are < %d days old (will be kept)\n" % MAX_DAYS)
+            file_ptr.write("%s\n" % HEADER2)
         elif file == IN_REL_FILES:
-            file_ptr.write("# These files are found in both the dev repo AND release repo and will NOT be removed\n")
-            file_ptr.write("#####################################################################################\n")
+            file_ptr.write("%s\n" % HEADER2)
+            file_ptr.write("# These files are found in both the dev repo and release repo and will not be removed\n")
+            file_ptr.write("%s\n" % HEADER2)
         elif file == DELETE_FILES:
-            file_ptr.write("# These files are marked for deletion because they are NOT in the release repo,\n")
-            file_ptr.write("# are NOT in one of the skip lists and their lastModified date is > %d days\n" % MAX_DAYS)
-            file_ptr.write("################################################################################\n")
+            file_ptr.write("%s\n" % HEADER2)
+            file_ptr.write("# These files are marked for deletion because they are not in the release repo, are not")
+            file_ptr.write("# in one of the skip lists\n# and their lastModified date is > %d days\n" % MAX_DAYS)
+            file_ptr.write("%s\n" % HEADER2)
 
         for k in sorted(lst):
             file_ptr.write('%s\n' % k)
@@ -452,35 +459,33 @@ def main():
 
     # Log, and maybe show, which options were called
     lprint ('\nScript called with these options..', False)
-    lprint ('       WAIT: %s' % WAIT, False)
-    lprint ('    VERBOSE: %s' % VERBOSE, False)
-    lprint ('  DO_DELETE: %s' % DO_DELETE, False)
-    lprint (' DELETE_ONE: %s' % DELETE_ONE, False)
+    lprint ('WAIT: %s' % WAIT, False)
+    lprint ('VERBOSE: %s' % VERBOSE, False)
+    lprint ('MAX_DAYS: %d' % MAX_DAYS, False)
+    lprint ('DO_DELETE: %s' % DO_DELETE, False)
+    lprint ('DELETE_ONE: %s' % DELETE_ONE, False)
     lprint ('INTERACTIVE: %s' % INTERACTIVE, False)
-    lprint ('   MAX_DAYS: %d' % MAX_DAYS, False)
-    lprint ('   CLEAN UP FILES: %s' % CLEAN, False)
-    lprint (' USE_CREATED_TIME: %s' % USE_CREATED_TIME, False)
-    lprint ('USE_MODIFIED_TIME: %s' % USE_MODIFIED_TIME, False)
-    lprint ('\n SKIP_LIST: %s' % SKIP_LIST, False)
-    lprint ('\nSKIP_FILES: %s' % DO_NOT_DEL_LIST, False)
+    lprint ('CLEAN UP FILES: %s' % CLEAN, False)
+    lprint ('USE CREATED TIME: %s' % USE_CREATED_TIME, False)
+    lprint ('USE MODIFIED TIME: %s' % USE_MODIFIED_TIME, False)
+    lprint ('SKIP FILES: %s' % ', '.join(DO_NOT_DEL_LIST), False)
+    lprint ('SKIP FOLDERS: %s' % ', '.join(SKIP_LIST), False)
     lprint ('', True)
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
     if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data
-        lprint ('\nGenerating npm-dev catalog\n==========================', False)
-        if len(SKIP_LIST):
-            msg = ', '.join(SKIP_LIST)
-            lprint ('Folders to skip: %s' % msg, False)
-            lprint ('----------------------------------------------------------------------------------------------', False)
+        lprint ('\nGenerating npm-dev catalog\n%s' % HEADER1, False)
+#        if len(SKIP_LIST):
+#            msg = ', '.join(SKIP_LIST)
+#            lprint ('Folders to skip: %s' % msg, False)
+#            lprint ('----------------------------------------------------------------------------------------------', False)
 
-        lprint ('Call collect_data(DEV_PATH)', False)
         dev_base = collect_data(DEV_PATH)
-        lprint ('Call traverse("dev", dev_base, dev_catalog)', False)
         traverse('dev', dev_base, dev_catalog)
         save_catalog(dev_catalog, DEV_CATALOG)
 
-        lprint ('\nGenerating npm-release catalog\n==============================', False)
+        lprint ('\nGenerating npm-release catalog\n%s' % HEADER1, False)
         rel_base = collect_data(REL_PATH)
         traverse('rel', rel_base, rel_catalog)
         save_catalog(rel_catalog, REL_CATALOG)
