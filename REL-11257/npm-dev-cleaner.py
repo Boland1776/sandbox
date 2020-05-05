@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.8 (05/05/2020)
+# Version 1.1.9 (05/05/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -41,7 +41,7 @@ DEV_PATH  = BASE_PATH + '/npm-dev'      # Maybe future versions will have these 
 REL_PATH  = BASE_PATH + '/npm-release'
 
 # Misc files generated
-LOG_FILE     = 'log'                # timestamp and ".txt" are appended to this
+LOG_FILE     = 'log.txt'            # Script output log
 DEV_CATALOG  = 'dev_catalog.txt'    # Where I store npm-dev results
 REL_CATALOG  = 'release_catalog.txt'# Where I store npm-release results
 KEEP_FILES   = 'keepers.txt'        # File NOT found in release repo but to young to delete.
@@ -356,7 +356,8 @@ def lprint(msg, wait):
     """ Log and print a message """
     global timestamp
 
-    log_file =  LOG_FILE + '-' + timestamp + '.txt'
+#    log_file =  LOG_FILE + '-' + timestamp + '.txt'
+    log_file =  LOG_FILE
 
     if LOG_DATA:
         with open(log_file, 'a') as lf:
