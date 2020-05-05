@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.10 (05/05/2020)
+# Version 1.1.11 (05/05/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -252,8 +252,8 @@ def write_list(file, lst):
             file_ptr.write("%s\n" % HEADER2)
         elif file == DELETE_FILES:
             file_ptr.write("%s\n" % HEADER2)
-            file_ptr.write("# These files are marked for deletion because they are not in the release repo, are not")
-            file_ptr.write("# in one of the skip lists\n# and their lastModified date is > %d days\n" % MAX_DAYS)
+            file_ptr.write("# These files are marked for deletion because they are not in the release repo, are not in one of the skip lists\n")
+            file_ptr.write("# and their lastModified date is > %d days\n" % MAX_DAYS)
             file_ptr.write("%s\n" % HEADER2)
 
         for k in sorted(lst):
@@ -363,11 +363,8 @@ def lprint(msg, wait):
     """ Log and print a message """
     global timestamp
 
-#    log_file =  LOG_FILE + '-' + timestamp + '.txt'
-    log_file =  LOG_FILE
-
     if LOG_DATA:
-        with open(log_file, 'a') as lf:
+        with open(LOG_FILE, 'a') as lf:
             lf.write(msg + '\n')
 
     if VERBOSE:                     # Verbose is set
@@ -418,6 +415,9 @@ def main():
     args   = parser.parse_args()
     user   = args.user
     passwd = args.password
+
+    if os.path.exists(LOG_FILE):
+        os.remove(LOG_FILE)
 
     if args.days:
         MAX_DAYS = args.days
@@ -476,11 +476,6 @@ def main():
     # without having to constantly send requests to artifactory
     if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data
         lprint ('\nGenerating npm-dev catalog\n%s' % HEADER1, False)
-#        if len(SKIP_LIST):
-#            msg = ', '.join(SKIP_LIST)
-#            lprint ('Folders to skip: %s' % msg, False)
-#            lprint ('----------------------------------------------------------------------------------------------', False)
-
         dev_base = collect_data(DEV_PATH)
         traverse('dev', dev_base, dev_catalog)
         save_catalog(dev_catalog, DEV_CATALOG)
