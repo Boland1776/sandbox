@@ -1,10 +1,12 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.7 (04/27/2020)
+# Version 1.1.8 (05/05/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
+
+# Local storage: devartifactory1 : /art-backups/current/repositories/npm-dev/
 
 import json
 import re
@@ -42,9 +44,10 @@ REL_PATH  = BASE_PATH + '/npm-release'
 LOG_FILE     = 'log'                # timestamp and ".txt" are appended to this
 DEV_CATALOG  = 'dev_catalog.txt'    # Where I store npm-dev results
 REL_CATALOG  = 'release_catalog.txt'# Where I store npm-release results
-KEEP_FILES   = 'keepers.txt'        # Where I store files to keep
+KEEP_FILES   = 'keepers.txt'        # File NOT found in release repo but to young to delete.
+IN_REL_FILES = 'in_release_repo.txt'# Files found in release repo (to keep)
 DELETE_FILES = 'deleters.txt'       # Where I store files to delete
-SKIPPED_FILES = 'skipped.txt'       # Where I store files/folders to skip
+SKIPPED_FILES = 'skipped.txt'       # Where I store files/folders to skip (matched SKIP_LIST)
 
 # Skip the following FOLDERS in the npm-dev repo
 # This list can be appended to via the "-S <list,of,folders>" option (comma seperated)
@@ -123,7 +126,7 @@ def traverse(repo_name, data, catalog):
                 # See if this folder (data['path']) is in our list of folders to skip (SKIP_LIST)
                 # If so, skip it by returning
                 if re.findall(r"(?=("+'|'.join(SKIP_LIST)+r"))", data['path']):
-                    lprint ('! skipping: %s' % data['uri'], False)
+                    lprint ('! skipping folder: %s' % data['uri'], False)
                     skipped.append('Skip Folder: ' + data['uri'])
                     return(catalog)     # There was a match so return w/o further processing
 
@@ -135,7 +138,7 @@ def traverse(repo_name, data, catalog):
 
         # If nothing is returned that's an issue. Add it to the 'skip' list and log it as needing "Attention"
         if new_data == None:
-            lprint ('! skip NULL dict: %s' % c['uri'], False)
+            lprint ('! skipping null dict: %s' % c['uri'], False)
             skipped.append('Attention: ' + data['uri'] + c['uri'])
         else:
             if c['folder']:                             # If the child is a folder
@@ -146,7 +149,7 @@ def traverse(repo_name, data, catalog):
                     if len(DO_NOT_DEL_LIST) > 0:    # Make sure there is something to skip
                 # If a file name contans "DO_NOT_DELETE" (or some variant thereof), or 'package.json, skip it
                         if re.findall(r"(?=("+'|'.join(DO_NOT_DEL_LIST)+r"))", c['uri']):
-                            lprint ('! skipping: %s' % c['uri'], False)             # Show file (only) for readability
+                            lprint ('! skipping file: %s' % c['uri'], False)        # Show file (only) for readability
                             skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path
                             return(catalog)
 
@@ -158,6 +161,7 @@ def traverse(repo_name, data, catalog):
                 if len(new_data) == 0:
                     lprint ('! ignore: no date found (%s)' % file, False)
                     if repo_name == 'dev':              # Only process items in dev catalog
+                        lprint ('! skipping null date: %s' % c['uri'], False)   # Show file (only) for readability
                         skipped.append('Null date: ' + data['uri'] + c['uri'])
                 else:
             # I think we should be uising the lastModified date instead of created date. Some files have a
@@ -222,6 +226,29 @@ def write_list(file, lst):
 
     lprint ('Writing list to %s' % file, False)
     with open(file, 'w') as file_ptr:
+        # Since we sort the list when we write I can't merely insert these comments into the list. I must write them to
+        # the file then write the sorted data behind it.
+        if file == SKIPPED_FILES:
+            file_ptr.write("# These files were skipped because..\n")
+            file_ptr.write("# 1) There was an issue processing the file date\n")
+            file_ptr.write("# 2) The folder/file matches one of these names..\n")
+            tmp = '# {}'.format(', '.join(DO_NOT_DEL_LIST))
+            file_ptr.write('%s\n' % tmp)
+            file_ptr.write("#\n# 3) The folder/file matches one of these names..\n")
+            tmp = '# {}'.format(', '.join(SKIP_LIST))
+            file_ptr.write('%s\n' % tmp)
+            file_ptr.write("#\n################################################\n")
+        elif file == KEEP_FILES:
+            file_ptr.write("# These files were NOT found in the release repo but are < %d days old (will be kept)\n" % MAX_DAYS)
+            file_ptr.write("##########################################################################################\n")
+        elif file == IN_REL_FILES:
+            file_ptr.write("# These files are found in both the dev repo AND release repo and will NOT be removed\n")
+            file_ptr.write("#####################################################################################\n")
+        elif file == DELETE_FILES:
+            file_ptr.write("# These files are marked for deletion because they are NOT in the release repo,\n")
+            file_ptr.write("# are NOT in one of the skip lists and their lastModified date is > %d days\n" % MAX_DAYS)
+            file_ptr.write("################################################################################\n")
+
         for k in sorted(lst):
             file_ptr.write('%s\n' % k)
 
@@ -233,6 +260,8 @@ def delete_files(lst, u, p):
 
     lprint('%d files to delete ..' % len(lst), False)
     for file in lst:
+        if file.startsWith('#'):    # Skip any comment in the file
+            continue
 
         if DO_DELETE:
 
@@ -357,9 +386,11 @@ def main():
 
     rel_catalog = dict()
     dev_catalog = dict()
-    keep   = list()
-    delete = list()
-    skipped = []
+    keep        = list()
+    rel_list    = list()
+    in_release  = list()
+    delete      = list()
+    skipped     = []
 
     # These are only used for running on CLI. Jenkins passes its params (except creds) via env-vars in OS
     parser = argparse.ArgumentParser(description='NPM artifact cleaner')
@@ -376,8 +407,8 @@ def main():
     parser.add_argument('-u', '--user', help='username', required=True, type=str)
     parser.add_argument('-p', '--password', help='passwd', required=True, type=str)
 
-    args = parser.parse_args()
-    user = args.user
+    args   = parser.parse_args()
+    user   = args.user
     passwd = args.password
 
     if args.days:
@@ -459,13 +490,33 @@ def main():
         rel_catalog = read_data(REL_CATALOG)
         lprint ('%d files read from %s' % (len(rel_catalog), REL_CATALOG), True)
 
-    lprint ('Skipped prior to proc %d' % len(skipped), False)
-
-    # Now that I have all the development and release files, with their creation dates, it's time to process them
-    # Files > MAX_DAYS and are NOT in the release catalog can be deleted
+    # Now that I have all the development and release files, with their creation dates, it's time to process them.
+    # Files > MAX_DAYS and are NOT in the release catalog AND are NOT in the SKIP LISTSs can be deleted
+    rel_list = rel_catalog.keys()   # Convert dict to list of keys
     for dev_file in sorted(dev_catalog):    # Loop through the development files
         lprint ('Processing: %s' % dev_file, False)
-        if not dev_file in rel_catalog:     # If dev file is NOT in the release catalog, check date, etc
+        file_name = dev_file.split('/')[-1] # Just the file with no path
+
+        # When we search for the file_name in the release catalog we have to take into account that the file name
+        # might be common in multiple paths, which we don't want. The easiest way
+        # for that search is to merely change the key's path from "npm-dev" to "npm-release". If that key
+        # exists in the release_catalog, we know not to remove it from the dev_catalog
+
+        # Convert the dev key to a possible release key
+        rel_to_chk = dev_file.replace('/npm-dev/', '/npm-release/')
+
+        # See if our new key matches ANY entries in the list of release keys
+        if any (rel_to_chk in rl for rl in rel_list):
+            lprint ('    -> "%s" is listed in release catalog and will be kept' % file_name, False)
+
+            # As a sanity check I verify the key we're using IS a key int he release catalog. It would be
+            # very odd if it weren't, but better to be safe than sorry.
+            if not rel_to_chk in rel_catalog.keys():
+                lprint('ERROR: Could not verify key (%s)' % rel_to_chk, False)
+                skipped.append(dev_file)    # Err on the side of caution and dont delete the file.
+            else:
+                in_release.append(dev_file) # Add to list of files ALSO found in the release repo
+        else:
             tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', dev_catalog[dev_file])    # Strip off timezone
             tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
             file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
@@ -474,19 +525,23 @@ def main():
             delta         = todays_date - file_date
 
             if delta.days > MAX_DAYS:
-                lprint ('  -> file is not in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
+                lprint ('  -> file is NOT in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
                 delete.append(dev_file)         # Put this file in the delete list
             else:
                 lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
-                keep.append(dev_file)           # Put this file in the keep list
-        else:
-            lprint ('    -> file is listed in release catalog and will be kept', False)
-            keep.append(dev_file)           # Put this file in the keep list
+                keep.append(dev_file)           # Files NOT in release repo but too yuong
 
+    lprint ('', False)
+    lprint('%4d entries in npm-release repo' % len(rel_catalog), False)
+    lprint('%4d entries in npm-dev repo' % len(dev_catalog), False)
+    lprint('%4d entries skipped (from SKIP_LIST)' % len(skipped), False)
+    lprint('%4d entries skipped (Found in release repo)' % len(in_release), False)
+    lprint('%4d entries kept (Too young)' % len(keep), False)
+    lprint('%4d entries to delete' % len(delete), False)
     lprint ('', False)
     write_list(KEEP_FILES, keep)
     write_list(DELETE_FILES, delete)
-    lprint ('Skipped prior to save %d' % len(skipped), False)
+    write_list(IN_REL_FILES, in_release)
     write_list(SKIPPED_FILES, skipped)
     lprint ('', False)
     if not DO_DELETE:
