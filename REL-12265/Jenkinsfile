@@ -1,0 +1,22 @@
+pipeline {
+  agent{
+    node {
+      label 'brick'
+    }
+  }
+  stages {
+    stage ('Execute cleanup bh-snapshot script') {
+      steps {
+        echo 'Begin cleanup'
+        withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'c376347e-4245-49fc-be2c-b4aa0ddce81f',usernameVariable: 'NAME', passwordVariable: 'WORD']]) {
+          sh "python REL-12265/bh-snapshots.py -u ${NAME} -p ${WORD}"
+        }
+      }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: '*.txt', fingerprint: true, onlyIfSuccessful: true
+    }
+  }
+}
