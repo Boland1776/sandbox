@@ -40,8 +40,8 @@ MAX_DATA_SHOWN = False # Flag to only show when we reach max limt once
 # with over 725,000 files).
 GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we use saved catalog files)
 
-HEADER1 = "=" * 80
-HEADER2 = "#" * 80
+HEADER1 = "=" * 90
+HEADER2 = "#" * 90
 
 # User options (some are only available via CLI)
 DELETE_ONE = False  # Delete on file and exit : CLI and Jenkins (for now)
@@ -239,23 +239,22 @@ def write_list(file, lst):
         # the file then write the sorted data behind it.
         if file == SKIPPED_FILES:
             file_ptr.write("%s\n" % HEADER2)
-            file_ptr.write("# These files were skipped (will not be removed) due to one or more of the following ..\n")
-            file_ptr.write("# 1) There was an issue processing the file date\n")
-            file_ptr.write("# 2) The file matches one of these names..\n")
-            tmp = '#      {}'.format(', '.join(SKIP_FILES))
+            file_ptr.write("#    These files were skipped (will not be removed) due to one or more of the following ..\n")
+            file_ptr.write("#    1) There was an issue processing the file date\n")
+            file_ptr.write("#    2) The file matches one of these names..\n")
+            tmp = '#         {}'.format(', '.join(SKIP_FILES))
             file_ptr.write('%s\n' % tmp)
-            file_ptr.write("#\n# 3) The folder matches one of these names..\n")
-            tmp = '#      {}'.format(', '.join(SKIP_FOLDERS))
+            file_ptr.write("#\n   # 3) The folder matches one of these names..\n")
+            tmp = '#         {}'.format(', '.join(SKIP_FOLDERS))
             file_ptr.write('%s\n' % tmp)
             file_ptr.write("#\n%s\n" % HEADER2)
         elif file == KEEP_FILES:
             file_ptr.write("%s\n" % HEADER2)
-            file_ptr.write("# These files were not found in the release repo but are < %d days old (will be kept)\n" % MAX_DAYS)
+            file_ptr.write("#    These files are < %d days old (will be kept)\n" % MAX_DAYS)
             file_ptr.write("%s\n" % HEADER2)
         elif file == DELETE_FILES:
             file_ptr.write("%s\n" % HEADER2)
-            file_ptr.write("# These files are marked for deletion because they are not in the release repo, are not in one of the skip lists\n")
-            file_ptr.write("# and their lastModified date is > %d days\n" % MAX_DAYS)
+            file_ptr.write("#    These files are marked for deletion because they are not in a skip lists and are > %d days old\n" % MAX_DAYS)
             file_ptr.write("%s\n" % HEADER2)
 
         for k in sorted(lst):
