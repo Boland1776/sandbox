@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.11 (05/05/2020)
+# Version 1.1.12 (05/07/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -27,9 +27,9 @@ HEADER1 = "=" * 80
 HEADER2 = "#" * 80
 
 # User options (some are only available via CLI)
-DELETE_ONE = False  # Delete on file and exit : CLI and Jenkins (for now)
+DELETE_ONE = False  # Delete one file and exit : CLI
 INTERACTIVE = False # Have user confirm deletion for each file (for debugging) : CLI
-CLEAN     = True    # Clean any files I create (except the log) : CLI and Jenkins
+CLEAN     = True    # Clean any files I create (except the log) : CLI and Jenkins (KEEP_FILES)
 LOG_DATA  = True
 VERBOSE   = False   # Show what's being done : CLI and Jenkins
 WAIT      = False   # Wait for user if true. : CLI
@@ -53,7 +53,8 @@ DELETE_FILES = 'deleters.txt'       # Where I store files to delete
 SKIPPED_FILES = 'skipped.txt'       # Where I store files/folders to skip (matched SKIP_LIST)
 
 # Skip the following FOLDERS in the npm-dev repo
-# This list can be appended to via the "-S <list,of,folders>" option (comma seperated)
+# This list can be appended to via the "-S <list,of,folders>" option (comma seperated) or, from Jenkins,
+# by adding folders in the "SKIP_LIST" parameter.
 SKIP_LIST    = ['.npm/@bullhorn-internal', '.npm/@bullhorn',     '.npm/bh-elements',
                 '.npm/symphony-staffing',  '.npm/chomsky',       '.npm/galaxy-parser',
                 '.npm-generator-novo',     '@bullhorn-internal', '@bullhorn',
@@ -61,7 +62,7 @@ SKIP_LIST    = ['.npm/@bullhorn-internal', '.npm/@bullhorn',     '.npm/bh-elemen
                 'galaxy-parser',           'generator-novo'
                ]
 
-# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and package.json
+# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and files names "package.json"
 # This list can only be modified here (for now).
 DO_NOT_DEL_LIST = ['DONOTDELETE',   'DO_NOT_DELETE',   'DONTDELETE',
                    'DONT_DELETE',   'package.json'
@@ -87,18 +88,18 @@ def collect_data(uri):
     args = shlex.split(curl_str)                                    # Convert cmd to shell-like syntax
     with open(os.devnull, 'w') as DEV_NULL:                         # Open file descriptor to /dev/null
         try:                                                        # Try and run the curl command
-            out = subprocess.check_output(args, stderr=DEV_NULL)    # If success, "out" has our data
-        except subprocess.CalledProcessError as e:                  # Report issues the process had
-            lprint('! subprocess ERROR %s' % e.output, False)         # Print that exception here
-        except:                                                     # Grab all other exceptions here
-            lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False) # And try to show what caused the issue
+            out = subprocess.check_output(args, stderr=DEV_NULL)    # If success, <out> has our data
+        except subprocess.CalledProcessError as e:                  # If subprocess error..
+            lprint('! subprocess ERROR %s' % e.output, False)       # show that here
+        except:                                                     # All oher exceptions caught here
+            lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False) # Display the system error
         else:                                                           # No exception, so continue processing..
-            try:                                                        # Try and convert "out" data to JSON
+            try:                                                        # Try and convert <out> data to JSON
                 data = json.loads(out)                                  # Ok, we converted to JSON
                 if 'errors' in data:                                    # Sometimes the curl worked but we get bad data
-                    lprint('! ERROR: Curl request returned: %s' % data, False)  # Show the error returned
+                    lprint('! ERROR: Curl request returned: %s' % data, False)  # Show the error returned by curl
                     data = list()                                       # Return empty dict
-            except ValueError as e:                                     # Those pesky files don't product any output :(
+            except ValueError as e:                                     # Some pesky files don't produce any output :(
                 lprint('! ValueError: Could not convert data to JSON', False) # So log it and move on
             except:                                                     # Grab all other exceptions here
                 lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False)  # Get error from system
@@ -106,7 +107,7 @@ def collect_data(uri):
     return data         # Return the data dict (whether it has data or is None)
 
 def traverse(repo_name, data, catalog):
-    """ Recursively traverse through folders looking for files. """
+    """ Called to recursively traverse through folders looking for files. """
 
     global skipped
 
@@ -135,9 +136,9 @@ def traverse(repo_name, data, catalog):
 
         # If here, this is a valid file/folder to process
         # Create the full path (new_path) with child name. If it has a 'folder' key we traverse deeper. If not, this
-        # must be a file and I obtain the creation date from the <new_path>
+        # must be a file so I obtain the creation / lastModified date from the <new_path>
         new_path = use_repo + data['path'] + c['uri']
-        new_data = collect_data(new_path)               # Get data on new path
+        new_data = collect_data(new_path)               # Get curl data on new path
 
         # If nothing is returned that's an issue. Add it to the 'skip' list and log it as needing "Attention"
         if new_data == None:
@@ -150,13 +151,13 @@ def traverse(repo_name, data, catalog):
 
                 if repo_name == 'dev':              # Only process items in dev catalog
                     if len(DO_NOT_DEL_LIST) > 0:    # Make sure there is something to skip
-                # If a file name contans "DO_NOT_DELETE" (or some variant thereof), or 'package.json, skip it
+                # If a file name contans "DO_NOT_DELETE" (or some variant thereof), or 'package.json', skip it
                         if re.findall(r"(?=("+'|'.join(DO_NOT_DEL_LIST)+r"))", c['uri']):
                             lprint ('! skipping file: %s' % c['uri'], False)        # Show file (only) for readability
                             skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path
                             return(catalog)
 
-                file = data['uri'] + c['uri']          # File, full path
+                file = data['uri'] + c['uri']          # Save full path to <file>
 
                 # In some cases curl is returning no date info and I haven't been able to figure out why. It seems
                 # to occur on files with spaces and/or parenthesis in the file name. In any case, until I figure it
@@ -167,7 +168,7 @@ def traverse(repo_name, data, catalog):
                         lprint ('! skipping null date: %s' % c['uri'], False)   # Show file (only) for readability
                         skipped.append('Null date: ' + data['uri'] + c['uri'])
                 else:
-            # I think we should be uising the lastModified date instead of created date. Some files have a
+            # I think we should be using the lastModified date instead of created date. Some files have a
             # created date of years ago (package.json) while its lastModified date is within a day of current date
                     if USE_MODIFIED_TIME:
                         catalog[file] = new_data['lastModified'] # Save modified date in dict with <file> as key
@@ -177,7 +178,7 @@ def traverse(repo_name, data, catalog):
     return(catalog)
 
 def read_data(file):
-    """ Read the outut of a real run. Each line is a K|V pair to repopulate the dicts """
+    """ Read the saved outut of a real run. Each line is a K|V pair to repopulate the dicts """
     data = list()
     dct  = dict()
 
@@ -205,7 +206,7 @@ def read_data(file):
 
     return(dct) # Return the new dictionary
 
-# For debugging, so I don't log this output
+# For debugging, no need to log this output via lprint
 def show_catalog(cat):
     """ Show the catalog's dictionary """
 
@@ -213,8 +214,6 @@ def show_catalog(cat):
     raw_input('Press Enter when ready to view')
     for k in sorted(cat):
         print '%9s :: %s' % (cat[k], k)
-#        print '%s :lastModifed on: %s' % (k, cat[k])
-#        print '%s :created on: %s' % (k, cat[k])
 
 def save_catalog(dct, file):
     """ Save the catalog dictionary (dct) to file """
@@ -260,7 +259,7 @@ def write_list(file, lst):
             file_ptr.write('%s\n' % k)
 
 def delete_files(lst, u, p):
-    """ Delete the files from the delete list.
+    """ Delete the files obtained from the delete list.
         See: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes   for return codes
     """
     user_skip = False
@@ -270,15 +269,15 @@ def delete_files(lst, u, p):
         if file.startsWith('#'):    # Skip any comment in the file
             continue
 
-        if DO_DELETE:
+        if DO_DELETE:   # Option to delete the files from artifactory is set!
 
             # To delete the file we must reformat the path aquired and remove the string '/api/storage'
             # from the path. If we do not do this calls to delete will return "400" (bad request).
             file = file.replace('/api/storage', '')
 #            lprint('  "%s"' % file, False) # Show the file to be deleted
 
-            if INTERACTIVE:     # VERBOSE is set to True when this is selected
-                user_skip = False
+            if INTERACTIVE:         # Ask the user to confirm the deletion of each file
+                user_skip = False   # Flag to determine if user skipped file deletion
                 lprint ('%s' % file, False)
                 ans = raw_input('Ok to delete [y/n/q]: ')
                 if 'y' in ans:
@@ -470,7 +469,6 @@ def main():
     lprint ('USE MODIFIED TIME: %s' % USE_MODIFIED_TIME, False)
     lprint ('SKIP FILES: %s' % ', '.join(DO_NOT_DEL_LIST), False)
     lprint ('SKIP FOLDERS: %s' % ', '.join(SKIP_LIST), False)
-    lprint ('', True)
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
@@ -526,7 +524,7 @@ def main():
             delta         = todays_date - file_date
 
             if delta.days > MAX_DAYS:
-                lprint ('  -> file is NOT in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
+                lprint ('  -> file is not in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
                 delete.append(dev_file)         # Put this file in the delete list
             else:
                 lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
@@ -540,14 +538,18 @@ def main():
     lprint('%4d entries kept (Too young)' % len(keep), False)
     lprint('%4d entries to delete' % len(delete), False)
     lprint ('', False)
+
+    # Save the processed data for review, if need be.
     write_list(KEEP_FILES, keep)
     write_list(DELETE_FILES, delete)
     write_list(IN_REL_FILES, in_release)
     write_list(SKIPPED_FILES, skipped)
     lprint ('', False)
-    if not DO_DELETE:
+
+    # Here we finally do something with the files we collected.
+    if not DO_DELETE:   # User did not issue DO_DELETE option, so print a messge and move on
         lprint ('File deletion skipped', False)
-    else:
+    else:               # USer did say they want to delete the files so call that function here
         delete_files(delete, user, passwd)
 
     lprint ('', False)
