@@ -33,6 +33,7 @@ FILES_COLLECTED = 0
 # setting to zero means no limit
 MAX_FILES_TO_COLLECT = 0
 FROM_OS = False   # Time stamps are OS , not Artifactory time stamp
+MAX_DATA_SHOWN = False # Flag to only show when we reach max limt once
 
 # When set, we collect all the data via curl and save that data for future test runs. If the flag is False, we dont
 # run the "curl" and rely on the data saved (initially, these curls are taking 7+ hours (if run locally, days otherwise)
@@ -120,15 +121,14 @@ def collect_data(uri):
 def traverse(data, catalog):
     """ Recursively traverse through folders looking for files. """
 
-    global skipped, FILES_COLLECTED, MAX_FILES_TO_COLLECT
-    show_max_flag = False
+    global skipped, FILES_COLLECTED, MAX_FILES_TO_COLLECT, MAX_DATA_SHOWN
 
     # If the data has a 'children' key then I need to process it further
     for c in data['children']:
         if MAX_FILES_TO_COLLECT > 0 and FILES_COLLECTED >= MAX_FILES_TO_COLLECT:
-            if show_max_flag == False:  # Inly show this message once
+            if MAX_DATA_SHOWN == False:  # Inly show this message once
                 lprint('Collected %d files .. break' % FILES_COLLECTED, True)
-                show_max_flag = True
+                MAX_DATA_SHOWN = True
             return(catalog)
         FILES_COLLECTED = FILES_COLLECTED + 1
 #        lprint ('File: %d' % FILES_COLLECTED, False)
