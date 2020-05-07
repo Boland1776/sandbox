@@ -1,19 +1,19 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.0.0 (05/06/2020)
+# Version 1.0.2 (05/07/2020)
 #
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/<NA>
 #
 # See; REL-12265
 #   http://artifactory.bullhorn.com/webapp/#/artifacts/browse/tree/General/bh-snapshots
-#   Delete SNAPSHOT folder if it(or underlying SNAPSHOT artifacts) have not been modified in last 30 days
+#   Delete SNAPSHOT folder if it (or underlying SNAPSHOT artifacts) have not been modified in last 30 days
 #   Do not delete folders with a name of
-#   master-SNAPSHOT
-#   development-SNAPSHOT
-#   develop-SNAPSHOT
-#   dev-SNAPSHOT
+#     master-SNAPSHOT
+#     development-SNAPSHOT
+#     develop-SNAPSHOT
+#     dev-SNAPSHOT
 
 # Local storage: devartifactory1 : /art-backups/current/repositories/bh-snapshots
 
@@ -28,8 +28,15 @@ import time
 import subprocess
 import shlex
 
+FILES_COLLECTED = 0
+# Max number of files to collect. There are over 725000 files so give the option to limit that
+# setting to zero means no limit
+MAX_FILES_TO_COLLECT = 0
+FROM_OS = False   # Time stamps are OS , not Artifactory time stamp
+
 # When set, we collect all the data via curl and save that data for future test runs. If the flag is False, we dont
-# run the "curl" and rely on the data saved (initially, these curls are taking 10's of minutes).
+# run the "curl" and rely on the data saved (initially, these curls are taking 7+ hours (if run locally, days otherwise)
+# with over 725,000 files).
 GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we use saved catalog files)
 
 HEADER1 = "=" * 80
@@ -59,12 +66,13 @@ DELETE_FILES      = 'deleters.txt'       # Where I store files to delete
 SKIPPED_FILES     = 'skipped.txt'       # Where I store files/folders to skip (matched SKIP_FOLDERS)
 
 # Skip the following FOLDERS in the npm-dev repo
-# This list can be appended to via the "-S <list,of,folders>" option (comma seperated)
-SKIP_FOLDERS = [ 'master-SNAPSHOT', 'development-SNAPSHOT', 'develop-SNAPSHOT', 'dev-SNAPSHOT' ]
+# This list can be appended to via the CLI "-S <list,of,folders>" option (comma seperated) or, from Jenkins
+# by adding folders in "SKIP_LIST"
+SKIP_FOLDERS = ['master-SNAPSHOT', 'development-SNAPSHOT', 'develop-SNAPSHOT', 'dev-SNAPSHOT']
 
-# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and package.json
+# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and the file package.json
 # This list can only be modified here (for now).
-SKIP_FILES = [ 'DONOTDELETE', 'DO_NOT_DELETE', 'DONTDELETE', 'DONT_DELETE' ]
+SKIP_FILES = ['DONOTDELETE', 'DO_NOT_DELETE', 'DONTDELETE', 'DONT_DELETE', 'maven-metadata.xml']
 
 tmp             = datetime.datetime.today()
 todays_date_str = tmp.strftime("%Y-%m-%d")
@@ -75,42 +83,55 @@ skipped = list()
 
 def collect_data(uri):
     """ Collect URI data via curl and return output in a dict.  """
+    global FILES_COLLECTED
 
     data = list()
 
     # Some file names have spaces and/or parenthesis and don't seem to play well with curl. I have tried escaping the
     # string with no luck. For now, a simpler solution is to wrap the uri in quotes. So I do that here
     curl_str = 'curl "' + uri + '"'
-    lprint ('Processing: %s' % uri, False)
+#    short = '/'.join(uri.split('/')[-3:])
+    short = uri
+    short = short.replace(SNAPSHOT_PATH, '')
+    lprint ('%5d) Processing: %s' % (FILES_COLLECTED + 1, short), False)
+#    lprint ('%5d) Processing: %s' % (FILES_COLLECTED, uri), False)
 
     args = shlex.split(curl_str)                                    # Convert cmd to shell-like syntax
     with open(os.devnull, 'w') as DEV_NULL:                         # Open file descriptor to /dev/null
         try:                                                        # Try and run the curl command
             out = subprocess.check_output(args, stderr=DEV_NULL)    # If success, "out" has our data
-        except subprocess.CalledProcessError as e:                  # Report issues the process had
-            lprint('! subprocess ERROR %s' % e.output, False)         # Print that exception here
-        except:                                                     # Grab all other exceptions here
+        except subprocess.CalledProcessError as e:                  # If subPorcess error, report that here
+            lprint('! subprocess ERROR %s' % e.output, False)
+        except:                                                     # All other exceptions here
             lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False) # And try to show what caused the issue
         else:                                                           # No exception, so continue processing..
-            try:                                                        # Try and convert "out" data to JSON
+            try:                                                        # Try and convert <out> data to JSON
                 data = json.loads(out)                                  # Ok, we converted to JSON
                 if 'errors' in data:                                    # Sometimes the curl worked but we get bad data
-                    lprint('! ERROR: Curl request returned: %s' % data, False)  # Show the error returned
+                    lprint('! ERROR: Curl request returned: %s' % data, False)  # Show the error returned by curl
                     data = list()                                       # Return empty dict
-            except ValueError as e:                                     # Those pesky files don't product any output :(
+            except ValueError as e:                                     # Some pesky files don't produce any output :(
                 lprint('! ValueError: Could not convert data to JSON', False) # So log it and move on
             except:                                                     # Grab all other exceptions here
-                lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False)  # Get error from system
+                lprint('! Unknown ERROR: Sys: %s' % sys.exc_info()[0], False)  # Get error from system call
 
     return data         # Return the data dict (whether it has data or is None)
 
 def traverse(data, catalog):
     """ Recursively traverse through folders looking for files. """
 
-    global skipped
+    global skipped, FILES_COLLECTED
+    show_max_flag = False
 
     # If the data has a 'children' key then I need to process it further
     for c in data['children']:
+        if MAX_FILES_TO_COLLECT > 0 and FILES_COLLECTED >= MAX_FILES_TO_COLLECT:
+            if show_max_flag == False:  # Inly show this message once
+                lprint('Collected %d files .. break' % FILES_COLLECTED, True)
+                show_max_flag = True
+            return(catalog)
+        FILES_COLLECTED = FILES_COLLECTED + 1
+#        lprint ('File: %d' % FILES_COLLECTED, False)
 
         # If processing the 'DEV' repo, check to see if this is a folder in the SKIP_FOLDERS
         if len(SKIP_FOLDERS) > 0:      # Make sure there is something to skip
@@ -124,27 +145,27 @@ def traverse(data, catalog):
 
         # If here, this is a valid file/folder to process
         # Create the full path (new_path) with child name. If it has a 'folder' key we traverse deeper. If not, this
-        # must be a file and I obtain the creation date from the <new_path>
+        # must be a file and I obtain the creation, or lastModified, date from the <new_path>
         new_path = SNAPSHOT_PATH + data['path'] + c['uri']
-        new_data = collect_data(new_path)               # Get data on new path
+        new_data = collect_data(new_path)               # Get (curl) data on new path
 
         # If nothing is returned that's an issue. Add it to the 'skip' list and log it as needing "Attention"
         if new_data == None:
             lprint ('! skipping null dict: %s' % c['uri'], False)
             skipped.append('Attention: ' + data['uri'] + c['uri'])
         else:
-            if c['folder']:                             # If the child is a folder
+            if c['folder']:                  # If the child is a folder
                 traverse(new_data, catalog)  # traverse to the next level
-            else:                                       # If not a folder, new_data contains the date info we need
+            else:                            # If not a folder, new_data contains the date info we need
 
-                if len(SKIP_FILES) > 0:    # Make sure there is something to skip
-            # If a file name contans "DO_NOT_DELETE" (or some variant thereof), or 'package.json, skip it
+                if len(SKIP_FILES) > 0:      # Make sure there is something to skip
+            # If a file name contains "DO_NOT_DELETE" (or some variant thereof), or 'package.json', skip it
                     if re.findall(r"(?=("+'|'.join(SKIP_FILES)+r"))", c['uri']):
                         lprint ('! skipping file: %s' % c['uri'], False)        # Show file (only) for readability
-                        skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path
+                        skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path of file to skip
                         return(catalog)
 
-                file = data['uri'] + c['uri']          # File, full path
+                file = data['uri'] + c['uri'] # File is full path
 
                 # In some cases curl is returning no date info and I haven't been able to figure out why. It seems
                 # to occur on files with spaces and/or parenthesis in the file name. In any case, until I figure it
@@ -154,7 +175,7 @@ def traverse(data, catalog):
                     lprint ('! skipping null date: %s' % c['uri'], False)   # Show file (only) for readability
                     skipped.append('Null date: ' + data['uri'] + c['uri'])
                 else:
-            # I think we should be uising the lastModified date instead of created date. Some files have a
+            # I think we should be using the lastModified date instead of created date. Some files have a
             # created date of years ago (package.json) while its lastModified date is within a day of current date
                     if USE_MODIFIED_TIME:
                         catalog[file] = new_data['lastModified'] # Save modified date in dict with <file> as key
@@ -164,7 +185,7 @@ def traverse(data, catalog):
     return(catalog)
 
 def read_data(file):
-    """ Read the outut of a real run. Each line is a K|V pair to repopulate the dicts """
+    """ Read the saved outut of a real run. Each line is a K|V pair to repopulate the dicts """
     data = list()
     dct  = dict()
 
@@ -192,7 +213,7 @@ def read_data(file):
 
     return(dct) # Return the new dictionary
 
-# For debugging, so I don't log this output
+# For debugging, no need to log this output via lprint
 def show_catalog(cat):
     """ Show the catalog's dictionary """
 
@@ -200,11 +221,9 @@ def show_catalog(cat):
     raw_input('Press Enter when ready to view')
     for k in sorted(cat):
         print '%9s :: %s' % (cat[k], k)
-#        print '%s :lastModifed on: %s' % (k, cat[k])
-#        print '%s :created on: %s' % (k, cat[k])
 
 def save_catalog(dct, file):
-    """ Save the catalog dictionary (dct) to file """
+    """ Save the catalog dictionary (dct) to file (file) """
 
     lprint ('Saving catalog "%s"' % file, False)
     with open(file, 'w') as fo:
@@ -212,7 +231,7 @@ def save_catalog(dct, file):
             fo.write('%s|%s\n' % (k, dct[k]))
 
 def write_list(file, lst):
-    """ Write a list to file """
+    """ Write a list (lst) to file (file) """
 
     lprint ('Writing list to %s' % file, False)
     with open(file, 'w') as file_ptr:
@@ -233,10 +252,6 @@ def write_list(file, lst):
             file_ptr.write("%s\n" % HEADER2)
             file_ptr.write("# These files were not found in the release repo but are < %d days old (will be kept)\n" % MAX_DAYS)
             file_ptr.write("%s\n" % HEADER2)
-        elif file == IN_REL_FILES:
-            file_ptr.write("%s\n" % HEADER2)
-            file_ptr.write("# These files are found in both the dev repo and release repo and will not be removed\n")
-            file_ptr.write("%s\n" % HEADER2)
         elif file == DELETE_FILES:
             file_ptr.write("%s\n" % HEADER2)
             file_ptr.write("# These files are marked for deletion because they are not in the release repo, are not in one of the skip lists\n")
@@ -247,25 +262,25 @@ def write_list(file, lst):
             file_ptr.write('%s\n' % k)
 
 def delete_files(lst, u, p):
-    """ Delete the files from the delete list.
+    """ Delete the files obtained from the delete list.
         See: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes   for return codes
     """
     user_skip = False
 
     lprint('%d files to delete ..' % len(lst), False)
     for file in lst:
-        if file.startsWith('#'):    # Skip any comment in the file
+        if file.startswith('#'):    # Skip any comment in the file
             continue
 
-        if DO_DELETE:
+        if DO_DELETE:   # Option to delete the files from artifactory is set!
 
             # To delete the file we must reformat the path aquired and remove the string '/api/storage'
             # from the path. If we do not do this calls to delete will return "400" (bad request).
             file = file.replace('/api/storage', '')
 #            lprint('  "%s"' % file, False) # Show the file to be deleted
 
-            if INTERACTIVE:     # VERBOSE is set to True when this is selected
-                user_skip = False
+            if INTERACTIVE:         # Ask the user to confirm the deletion of each file
+                user_skip = False   # Set to initial state
                 lprint ('%s' % file, False)
                 ans = raw_input('Ok to delete [y/n/q]: ')
                 if 'y' in ans:
@@ -276,28 +291,28 @@ def delete_files(lst, u, p):
                 else:
                     lprint ('skipping "%s"' % file, False)
                     user_skip = True
-            elif DELETE_ONE:
-                resp = requests.delete(file, auth=(u, p))
-                if not 200 <= resp.status_code <= 299:  # Success values (200-299)
-                    lprint ('* Warning: %s' % resp, False)
-                    lprint ('  a non-success value was returned!', True)
-                else:
-                    lprint ('request status returned: %d' % resp.status_code, True)
-
-                return
-            else:
+            elif DELETE_ONE:   # Delete the first file listed and return (for dbg), if delete fails try the next one
                 lprint ('deleteing "%s"' % file, False)
                 resp = requests.delete(file, auth=(u, p))
-        else:
+                if 200 <= resp.status_code <= 299:  # Success values (200-299)
+                    lprint ('Success: request status returned: %d' % resp.status_code, True)
+                    return
+            else:           # Not interacive, just delete files as they come
+                lprint ('deleteing "%s"' % file, False)
+                resp = requests.delete(file, auth=(u, p))
+        else:           # Delete option is noit set. Run a simple "get" so we can test a transaction
             lprint ('"get" "%s"' % file, False)
             resp = requests.get(file, auth=(u, p))
 
+        # This is just what to display on the 'request' action we took.
+        # If there was no 'requuest' action on the file we show some info on the 'request' return code
+        # else, don't show data on a file where no action was taken
         if user_skip == False:
             if not 200 <= resp.status_code <= 299:  # Success values (200-299)
                 lprint ('* Warning: %s' % resp, False)
                 lprint ('  a non-success value was returned!', True)
             else:
-                lprint ('request status returned: %d' % resp.status_code, False)
+                lprint ('Success: request status returned: %d' % resp.status_code, False)
 
 def parse_options():
     """ Parse options that are set in the environment (from Jenkins) """
@@ -333,10 +348,14 @@ def parse_options():
     if tmp:
         MAX_DAYS = int(tmp)
 
+    tmp = os.getenv("MAX_FILES_TO_COLLECT")
+    if tmp:
+        MAX_FILES_TO_COLLECT = int(tmp)
+
 def cleanup_temp_files():
     """ Clean up temp files """
 
-    files = [KEEP_FILES, DELETE_FILES, SKIPPED_FILES, SNAPSHOT_CATALOG, REL_CATALOG]
+    files = [KEEP_FILES, DELETE_FILES, SKIPPED_FILES, SNAPSHOT_CATALOG]
 
     for f in files:
         if os.path.exists(f):
@@ -384,6 +403,7 @@ def main():
     # These are only used for running on CLI. Jenkins passes its params (except creds) via env-vars in OS
     parser = argparse.ArgumentParser(description='NPM artifact cleaner')
     parser.add_argument('-d', '--days', help='Remove files older than this value', type=int)
+    parser.add_argument('-m', '--max_files', help='Maximum number of files to collect', type=int)
     parser.add_argument('-c', '--create_time', help='Use file created time (instead of lastModified)', action='store_true')
     parser.add_argument('-k', '--keep_file', help='Dont keep_file temp files', action='store_true')
     parser.add_argument('-o', '--delete_one', help='Delete one file and exit', action='store_true')
@@ -406,6 +426,9 @@ def main():
     if args.days:
         MAX_DAYS = args.days
 
+    if args.max_files:
+        MAX_FILES_TO_COLLECT = args.max_files
+
     # If we have CLI options we must set an env-var to be consistent.
     # options not set as env-var are options Jenkins doesn't have
     if args.interactive:
@@ -413,8 +436,10 @@ def main():
         VERBOSE = True      # We have to see what we're doing
         WAIT = True         # Wait for user input
         CLEAN = False       # Dont delete files
+        os.environ["DO_DELETE"]  = "1"
     if args.delete_one:
         os.environ["DELETE_ONE"] = "1"
+        os.environ["DO_DELETE"]  = "1"
     if args.delete:
         os.environ["DO_DELETE"] = "1"
     if args.verbose:
@@ -446,6 +471,7 @@ def main():
     lprint ('WAIT: %s' % WAIT, False)
     lprint ('VERBOSE: %s' % VERBOSE, False)
     lprint ('MAX_DAYS: %d' % MAX_DAYS, False)
+    lprint ('MAX_FILES: %d' % MAX_FILES_TO_COLLECT, False)
     lprint ('DO_DELETE: %s' % DO_DELETE, False)
     lprint ('DELETE_ONE: %s' % DELETE_ONE, False)
     lprint ('INTERACTIVE: %s' % INTERACTIVE, False)
@@ -458,7 +484,7 @@ def main():
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
     if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data
-        lprint ('\nGenerating bh-snapshots catalog\n%s' % HEADER1, False)
+        lprint ('\nGenerating bh-snapshots catalog: %s\n%s' % (SNAPSHOT_PATH, HEADER1), False)
         snapshot_base = collect_data(SNAPSHOT_PATH)
         traverse(snapshot_base, snap_catalog)
         save_catalog(snap_catalog, SNAPSHOT_CATALOG)
@@ -474,11 +500,25 @@ def main():
         lprint ('Processing: %s' % dev_file, False)
         file_name = dev_file.split('/')[-1] # Just the file with no path
 
-        tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', snap_catalog[dev_file])    # Strip off timezone
-        tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
-        file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
-        file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
-        file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
+#        print 'DATE: %s' % snap_catalog[dev_file]
+        if FROM_OS:   # Date is formatted differently
+            tmp           = snap_catalog[dev_file]    # Strip off timezone
+            file_dt       = datetime.datetime.strptime(tmp, '%a %b %d %H:%M:%S %Y') # Convert dev_file to datetime obj
+#            file_dt       = datetime.datetime.strptime(tmp, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
+            file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
+            file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
+#            lprint('TMP: %s' % tmp, False)
+#            lprint('FILE_DATE_STR: %s' % file_date_str, False)
+#            lprint('FILE_DATE: %s' % file_date, False)
+        else:
+            tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', snap_catalog[dev_file])   # Strip off timezone
+            tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
+            file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
+            file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
+            file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
+#            lprint('FILE_DT: %s' % file_dt, False)
+#            lprint('FILE_DATE_STR: %s' % file_date_str, False)
+#            lprint('FILE_DATE: %s' % file_date, False)
         delta         = todays_date - file_date
 
         if delta.days > MAX_DAYS:
@@ -487,6 +527,7 @@ def main():
         else:
             lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
             keep.append(dev_file)           # Files NOT in release repo but too yuong
+#        lprint('Next', True)
 
     lprint ('', False)
     lprint('%4d entries in bh-snapshot repo' % len(snap_catalog), False)
