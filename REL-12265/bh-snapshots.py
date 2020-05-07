@@ -120,7 +120,7 @@ def collect_data(uri):
 def traverse(data, catalog):
     """ Recursively traverse through folders looking for files. """
 
-    global skipped, FILES_COLLECTED
+    global skipped, FILES_COLLECTED, MAX_FILES_TO_COLLECT
     show_max_flag = False
 
     # If the data has a 'children' key then I need to process it further
@@ -317,7 +317,7 @@ def delete_files(lst, u, p):
 def parse_options():
     """ Parse options that are set in the environment (from Jenkins) """
 
-    global VERBOSE, SKIP_FOLDERS, MAX_DAYS, CLEAN, DO_DELETE, DELETE_ONE
+    global VERBOSE, SKIP_FOLDERS, MAX_DAYS, CLEAN, DO_DELETE, DELETE_ONE, MAX_FILES_TO_COLLECT
 
     tmp = os.getenv("VERBOSE")
     if tmp and tmp.lower() in ['true', '1']:
@@ -392,7 +392,7 @@ def lprint(msg, wait):
 def main():
     """ Main loop of script """
 
-    global MAX_DAYS, VERBOSE, INTERACTIVE, GEN_SAVED_DATA, SKIP_FOLDERS, WAIT, DO_DELETE, CLEAN
+    global MAX_DAYS, VERBOSE, INTERACTIVE, GEN_SAVED_DATA, SKIP_FOLDERS, WAIT, DO_DELETE, CLEAN, MAX_FILES_TO_COLLECT
     global skipped
 
     snap_catalog = dict()
