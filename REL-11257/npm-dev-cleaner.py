@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.12 (05/07/2020)
+# Version 1.1.13 (05/08/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -178,7 +178,7 @@ def traverse(repo_name, data, catalog):
     return(catalog)
 
 def read_data(file):
-    """ Read the saved outut of a real run. Each line is a K|V pair to repopulate the dicts """
+    """ Read the saved output of a real run. Each line is a K|V pair to repopulate the dicts """
     data = list()
     dct  = dict()
 
@@ -288,7 +288,7 @@ def delete_files(lst, u, p):
                 else:
                     lprint ('skipping "%s"' % file, False)
                     user_skip = True
-            elif DELETE_ONE:
+            elif DELETE_ONE:        # Delete the first file in the list and exit
                 resp = requests.delete(file, auth=(u, p))
                 if not 200 <= resp.status_code <= 299:  # Success values (200-299)
                     lprint ('* Warning: %s' % resp, False)
@@ -324,22 +324,22 @@ def parse_options():
     if tmp and tmp.lower() in ['true', '1']:
         DELETE_ONE = True
 
-    tmp = os.getenv("DO_DELETE")               # Used as a test. Run scans but exit after deleting one file
+    tmp = os.getenv("DO_DELETE")                # Used as a test. Run scans but exit after deleting one file
     if tmp and tmp.lower() in ['true', '1']:
         DO_DELETE = True
 
-    tmp = os.getenv("KEEP_FILES")
+    tmp = os.getenv("KEEP_FILES")               # Don't remove the files generated
     if tmp and tmp.lower() in ['true', '1']:
         CLEAN = False
 
-    tmp = os.getenv("USE_CREATED_TIME")
+    tmp = os.getenv("USE_CREATED_TIME")         # Compare 'created' time stamp instead of 'lastModified'
     if tmp and tmp.lower() in ['true', '1']:
         USE_CREATED_TIME = True
         USE_MODIFIED_DATE = False
 
-    tmp = os.getenv("SKIP_LIST")
+    tmp = os.getenv("SKIP_LIST")                # Append new folders to skip to the default list
     if tmp:
-        SKIP_LIST = tmp.split(',')
+        SKIP_LIST.extend(tmp.split(','))
 
     tmp = os.getenv("MAX_DAYS")
     if tmp:
@@ -362,24 +362,24 @@ def lprint(msg, wait):
     """ Log and print a message """
     global timestamp
 
-    if LOG_DATA:
+    if LOG_DATA:                    # If set keep a recoed of what we did (even if NOT in verbose mode)
         with open(LOG_FILE, 'a') as lf:
             lf.write(msg + '\n')
 
     if VERBOSE:                     # Verbose is set
-        if wait:                    # And we requested user input
+        if wait:                    # And requested user intervention
             if WAIT:                # And the WAIT option was issued
-                raw_input(msg)      # So, wait for user
-            else:                   # WAIT not issued
+                raw_input(msg)      # Display message and wait for user
+            else:                   # WAIT option not issued; so display the message and wait a few seconds
                 print msg           # Show message
                 sys.stdout.flush()  # Make sure we flush the msg before sleeping
                 time.sleep(2)       # And delay (instead of wait)
         else:
-            print msg               # Else, just print message
+            print msg               # print did not request user input (to wait) so just print message
     else:
-        if re.match(r'\* Warning', msg, re.IGNORECASE):
+        if re.match(r'\* Warning', msg, re.IGNORECASE): # If we have a warning to show, do it even if verbose not set
             print msg
-    sys.stdout.flush()              # One final flush for the rest
+    sys.stdout.flush()              # One final flush to make sure output is seen
 
 
 def main():
@@ -422,22 +422,23 @@ def main():
         MAX_DAYS = args.days
 
     # If we have CLI options we must set an env-var to be consistent.
-    # options not set as env-var are options Jenkins doesn't have
+    # options not set as env-var are options I did not include in Jenkins pipeline
     if args.interactive:
         INTERACTIVE = True  # Confirm each delete
         VERBOSE = True      # We have to see what we're doing
         WAIT = True         # Wait for user input
         CLEAN = False       # Dont delete files
-    if args.delete_one:
-        os.environ["DELETE_ONE"] = "1"
-    if args.delete:
-        os.environ["DO_DELETE"] = "1"
+    if args.delete_one:                 # CLI flag to delete one and exit
+        os.environ["DELETE_ONE"] = "1"  # Set same flag as envvar
+        os.environ["DO_DELETE"]  = "1"  # If we want to delete one we must make sure this option is set too
+    if args.delete:                     # CLI flag to delete files
+        os.environ["DO_DELETE"] = "1"   # Set same flag as envvar
     if args.verbose:
         os.environ["VERBOSE"] = "1"
-    if args.keep_file:
-        os.environ["KEEP_FILES"] = "1"
-    if args.create_time:
-        os.environ["USE_CREATED_TIME"] = "1"
+    if args.keep_file:                  # CLI flag to keep files
+        os.environ["KEEP_FILES"] = "1"  # Set same flag as envvar
+    if args.create_time:                # CLI flag; user requests we process 'created' tiem of file
+        os.environ["USE_CREATED_TIME"] = "1"  # Set same flag as envvar
     if args.wait:
         WAIT = True
     if args.generate:
@@ -449,10 +450,10 @@ def main():
         if not GEN_SAVED_DATA:
             print 'Warning: "-S" should not be used with "-g" (since we will be generating new data)'
 
-    parse_options()     # Parse any env-var options Jenkins sent
+    parse_options()     # Parse any env-var options Jenkins sent (and/or we set above)
 
     if DO_DELETE:
-        lprint ('** Delete option is set **', True)
+        lprint ('** Delete option is set **', True)     # One last warning to show files will be removed
         if DELETE_ONE:
             lprint ('** Delete one file and exit is also set **', False)
 
@@ -472,7 +473,7 @@ def main():
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple time
     # without having to constantly send requests to artifactory
-    if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data
+    if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data for re-use
         lprint ('\nGenerating npm-dev catalog\n%s' % HEADER1, False)
         dev_base = collect_data(DEV_PATH)
         traverse('dev', dev_base, dev_catalog)
