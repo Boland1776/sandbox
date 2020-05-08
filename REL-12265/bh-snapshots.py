@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.0.3 (05/08/2020)
+# Version 1.0.4 (05/08/2020)
 #
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/<NA>
@@ -346,7 +346,7 @@ def parse_options():
 
     tmp = os.getenv("SKIP_FOLDERS")             # Append new folders to skip to the default list
     if tmp:
-        SKIP_FOLDERS.extend(tmp.split(','))
+        SKIP_FOLDERS.extend(tmp.split(','))     # Extend the list with comma sep string
 
     tmp = os.getenv("MAX_DAYS")
     if tmp:
@@ -457,10 +457,8 @@ def main():
         WAIT = True
     if args.generate:
         GEN_SAVED_DATA = False  # Rely only on saved file data (for debugging)
-    if args.skip:               # Add these items to our skip list
-        new_list = args.skip.split(',')
-        SKIP_FOLDERS = SKIP_FOLDERS + new_list
-        os.environ["SKIP_FOLDERS"] = ','.join(SKIP_FOLDERS)
+    if args.skip:               # Add these CLI items to our skip list
+        SKIP_FOLDERS.extend(args.skip.split(','))
         if not GEN_SAVED_DATA:
             print 'Warning: "-S" should not be used with "-g" (since we will be generating new data)'
 
@@ -493,6 +491,7 @@ def main():
     lprint ('SKIP FILES: %s' % ', '.join(SKIP_FILES), False)
     lprint ('SKIP FOLDERS: %s' % ', '.join(SKIP_FOLDERS), False)
     print 'Script is running..'
+    raw_input('WAIT')
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple times
     # without having to constantly send requests to artifactory (especially since this takes a VERY long time)
@@ -528,11 +527,11 @@ def main():
         delta         = todays_date - file_date
 
         if delta.days > MAX_DAYS:
-            lprint ('  -> file is not in releases, is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
-            delete.append(dev_file)         # Put this file in the delete list
+            lprint ('  -> file is %d days old (%d is cutoff) .. marked for removal' % (delta.days, MAX_DAYS), False)
+            delete.append(dev_file)         # File is ripe for picking .. put file in delete list
         else:
-            lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
-            keep.append(dev_file)           # Files NOT in release repo but too yuong
+            lprint ('  -> file is only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
+            keep.append(dev_file)           # File is to young
 
     lprint ('', False)
     lprint('%4d entries in bh-snapshot repo' % len(snap_catalog), False)
