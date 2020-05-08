@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.0.2 (05/07/2020)
+# Version 1.0.3 (05/08/2020)
 #
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/<NA>
@@ -31,17 +31,22 @@ import shlex
 FILES_COLLECTED = 0
 # Max number of files to collect. There are over 725000 files so give the option to limit that
 # setting to zero means no limit
-MAX_FILES_TO_COLLECT = 0
-FROM_OS = False   # Time stamps are OS , not Artifactory time stamp
-MAX_DATA_SHOWN = False # Flag to only show when we reach max limt once
+MAX_FILES_TO_COLLECT = 1000    # By default process 1000 files. Jenkins may set to something else
+
+# There are over 725,000 files in this repo and running this remotely can take days. I have a test script that collects
+# all files directly but they return the OS time stamp when I was expecting an Artifactory time stamp
+FROM_OS = False         # If True, process the OS time stamp. False, process Artifactory time stamp
+
+# Processing data will likely be a few layers deep in the traverse function. If we hit the MAX_FILES_TO_COLLECT threshold
+# we begin backing out of those recursive calls.
+MAX_DATA_SHOWN = False  # This flag allows me to only show the "exitting.." message once
 
 # When set, we collect all the data via curl and save that data for future test runs. If the flag is False, we dont
 # run the "curl" and rely on the data saved (initially, these curls are taking 7+ hours (if run locally, days otherwise)
-# with over 725,000 files).
-GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and we use saved catalog files)
+GEN_SAVED_DATA = True   # By default we poll and save the data (False when debugging and I use saved catalog files)
 
-HEADER1 = "=" * 90
-HEADER2 = "#" * 90
+HEADER1 = "=" * 90  # Output file header
+HEADER2 = "#" * 90  # Output file header
 
 # User options (some are only available via CLI)
 DELETE_ONE = False  # Delete on file and exit : CLI and Jenkins (for now)
@@ -60,18 +65,18 @@ BASE_PATH      = 'http://artifactory.bullhorn.com:8081/artifactory/api/storage'
 SNAPSHOT_PATH  = BASE_PATH + '/bh-snapshots'
 
 # Misc files generated
-LOG_FILE          = 'log.txt'            # Script output log
-SNAPSHOT_CATALOG  = 'snap_catalog.txt'    # Where I store npm-dev results
-KEEP_FILES        = 'keepers.txt'        # File NOT found in release repo but to young to delete.
-DELETE_FILES      = 'deleters.txt'       # Where I store files to delete
-SKIPPED_FILES     = 'skipped.txt'       # Where I store files/folders to skip (matched SKIP_FOLDERS)
+LOG_FILE          = 'log.txt'           # Script output log
+SNAPSHOT_CATALOG  = 'snap_catalog.txt'  # Where I store bh-snapshots results with time stamp
+KEEP_FILES        = 'keepers.txt'       # File too young to delete.
+DELETE_FILES      = 'deleters.txt'      # Files to delete
+SKIPPED_FILES     = 'skipped.txt'       # Files/folders to skip (matched SKIP_FOLDERS/FILES)
 
-# Skip the following FOLDERS in the npm-dev repo
+# Skip the following FOLDERS in the SNAPSHOT_PATH repo
 # This list can be appended to via the CLI "-S <list,of,folders>" option (comma seperated) or, from Jenkins
 # by adding folders in "SKIP_LIST"
 SKIP_FOLDERS = ['master-SNAPSHOT', 'development-SNAPSHOT', 'develop-SNAPSHOT', 'dev-SNAPSHOT']
 
-# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and the file package.json
+# Skip FILES in this list. For now I skip variants of "DO_NOT_DELETE" in the file name, and the file "maven-metadata.xml"
 # This list can only be modified here (for now).
 SKIP_FILES = ['DONOTDELETE', 'DO_NOT_DELETE', 'DONTDELETE', 'DONT_DELETE', 'maven-metadata.xml']
 
@@ -91,11 +96,9 @@ def collect_data(uri):
     # Some file names have spaces and/or parenthesis and don't seem to play well with curl. I have tried escaping the
     # string with no luck. For now, a simpler solution is to wrap the uri in quotes. So I do that here
     curl_str = 'curl "' + uri + '"'
-#    short = '/'.join(uri.split('/')[-3:])
-    short = uri
-    short = short.replace(SNAPSHOT_PATH, '')
+    short = uri                                 # Create a short name for easier viewing
+    short = short.replace(SNAPSHOT_PATH, '')    # by removing the SNAPSHOT_PATH from the full path in the uri
     lprint ('%5d) Processing: %s' % (FILES_COLLECTED + 1, short), False)
-#    lprint ('%5d) Processing: %s' % (FILES_COLLECTED, uri), False)
 
     args = shlex.split(curl_str)                                    # Convert cmd to shell-like syntax
     with open(os.devnull, 'w') as DEV_NULL:                         # Open file descriptor to /dev/null
@@ -126,15 +129,13 @@ def traverse(data, catalog):
     # If the data has a 'children' key then I need to process it further
     for c in data['children']:
         if MAX_FILES_TO_COLLECT > 0 and FILES_COLLECTED >= MAX_FILES_TO_COLLECT:
-            if MAX_DATA_SHOWN == False:  # Inly show this message once
-                lprint('Collected %d files .. break' % FILES_COLLECTED, True)
-                MAX_DATA_SHOWN = True
+            if MAX_DATA_SHOWN == False: # Message has not been displayed yet.
+                lprint('Collected %d files .. exitting' % FILES_COLLECTED, True)
+                MAX_DATA_SHOWN = True   # Set to True to indicate I displayed the message
             return(catalog)
         FILES_COLLECTED = FILES_COLLECTED + 1
-#        lprint ('File: %d' % FILES_COLLECTED, False)
 
-        # If processing the 'DEV' repo, check to see if this is a folder in the SKIP_FOLDERS
-        if len(SKIP_FOLDERS) > 0:      # Make sure there is something to skip
+        if len(SKIP_FOLDERS) > 0:   # If our skip list has at leasat one entry...
 
             # See if this folder (data['path']) is in our list of folders to skip (SKIP_FOLDERS)
             # If so, skip it by returning
@@ -144,39 +145,40 @@ def traverse(data, catalog):
                 return(catalog)     # There was a match so return w/o further processing
 
         # If here, this is a valid file/folder to process
-        # Create the full path (new_path) with child name. If it has a 'folder' key we traverse deeper. If not, this
+        # Create the full path <new_path> with child name. If it has a 'folder' key we traverse deeper. If not, this
         # must be a file and I obtain the creation, or lastModified, date from the <new_path>
-        new_path = SNAPSHOT_PATH + data['path'] + c['uri']
-        new_data = collect_data(new_path)               # Get (curl) data on new path
+        new_path = SNAPSHOT_PATH + data['path'] + c['uri']  # Set new path to traverse
+        new_data = collect_data(new_path)                   # Get (curl) data on new path
 
         # If nothing is returned that's an issue. Add it to the 'skip' list and log it as needing "Attention"
         if new_data == None:
             lprint ('! skipping null dict: %s' % c['uri'], False)
             skipped.append('Attention: ' + data['uri'] + c['uri'])
-        else:
+
+        else:                                # <new_data> has data, so process it.
             if c['folder']:                  # If the child is a folder
                 traverse(new_data, catalog)  # traverse to the next level
-            else:                            # If not a folder, new_data contains the date info we need
+            else:                            # If not a folder, <new_data> contains the date info we need
 
-                if len(SKIP_FILES) > 0:      # Make sure there is something to skip
-            # If a file name contains "DO_NOT_DELETE" (or some variant thereof), or 'package.json', skip it
+                if len(SKIP_FILES) > 0:      # If I have one or more files to skip check that now.
+            # If a file name contains "DO_NOT_DELETE" (or some variant thereof), or 'maven-metadata.xml', skip it
                     if re.findall(r"(?=("+'|'.join(SKIP_FILES)+r"))", c['uri']):
                         lprint ('! skipping file: %s' % c['uri'], False)        # Show file (only) for readability
                         skipped.append('Skip File: ' + data['uri'] + c['uri'])  # Save full path of file to skip
                         return(catalog)
 
-                file = data['uri'] + c['uri'] # File is full path
+                file = data['uri'] + c['uri'] # Save full path in <file>
 
                 # In some cases curl is returning no date info and I haven't been able to figure out why. It seems
                 # to occur on files with spaces and/or parenthesis in the file name. In any case, until I figure it
                 # out, I will mark the file as 'skipped'.
-                if len(new_data) == 0:
+                if len(new_data) == 0:      # See if <new_datat> is 0 length
                     lprint ('! ignore: no date found (%s)' % file, False)
                     lprint ('! skipping null date: %s' % c['uri'], False)   # Show file (only) for readability
                     skipped.append('Null date: ' + data['uri'] + c['uri'])
                 else:
             # I think we should be using the lastModified date instead of created date. Some files have a
-            # created date of years ago (package.json) while its lastModified date is within a day of current date
+            # created date of years ago (maven-metadata.xml) while its lastModified date is within a day of current date
                     if USE_MODIFIED_TIME:
                         catalog[file] = new_data['lastModified'] # Save modified date in dict with <file> as key
                     else:
@@ -199,17 +201,17 @@ def read_data(file):
         for line in fi:
             data.append(line)
 
-    # Process the list into dictionary key value pairs and populate a new dict (to return)
+    # Process that list into dictionary key value pairs and populate a new dict (to return)
     for x in data:
-        x = x.strip()
+        x = x.strip()   # Remove trailing white space and new line char
 
         # There should only be two values (key|value). If there are more or less that's an issue, so skip it
         if len(x.split('|')) != 2:
             lprint ('  "%s" does not have two fields (%d) .. skipping' % (x, len(x.split('|'))), False)
             continue
 
-        (k, v) = x.split("|")
-        dct[k] = v
+        (k, v) = x.split("|")   # Get key value pair
+        dct[k] = v              # Save in a dictionary
 
     return(dct) # Return the new dictionary
 
@@ -226,16 +228,16 @@ def save_catalog(dct, file):
     """ Save the catalog dictionary (dct) to file (file) """
 
     lprint ('Saving catalog "%s"' % file, False)
-    with open(file, 'w') as fo:
-        for k in sorted(dct):
-            fo.write('%s|%s\n' % (k, dct[k]))
+    with open(file, 'w') as fo:                 # Open <file> for 'write'
+        for k in sorted(dct):                   # Loop through dictionary <dct>
+            fo.write('%s|%s\n' % (k, dct[k]))   # Write file name | time stamp
 
 def write_list(file, lst):
-    """ Write a list (lst) to file (file) """
+    """ Write a list <lst> of files to keep/skip/delete to file <file> """
 
     lprint ('Writing list to %s' % file, False)
     with open(file, 'w') as file_ptr:
-        # Since we sort the list when we write I can't merely insert these comments into the list. I must write them to
+        # I sort the list when I write so I can't merely insert these comments into the list. I must write them to
         # the file then write the sorted data behind it.
         if file == SKIPPED_FILES:
             file_ptr.write("%s\n" % HEADER2)
@@ -267,8 +269,9 @@ def delete_files(lst, u, p):
     user_skip = False
 
     lprint('%d files to delete ..' % len(lst), False)
-    for file in lst:
-        if file.startswith('#'):    # Skip any comment in the file
+
+    for file in lst:                # Loop through list <lst> of files to marked for deletion
+        if file.startswith('#'):    # Skip any comments in the file
             continue
 
         if DO_DELETE:   # Option to delete the files from artifactory is set!
@@ -294,24 +297,26 @@ def delete_files(lst, u, p):
                 lprint ('deleteing "%s"' % file, False)
                 resp = requests.delete(file, auth=(u, p))
                 if 200 <= resp.status_code <= 299:  # Success values (200-299)
-                    lprint ('Success: request status returned: %d' % resp.status_code, True)
-                    return
+                    lprint ('Success: request status: %d' % resp.status_code, True)
+                else:
+                    lprint ('* Fail: request status: %d' % resp.status_code, True)
+
+                return  # return whether deletion passed or failed
+
             else:           # Not interacive, just delete files as they come
                 lprint ('deleteing "%s"' % file, False)
                 resp = requests.delete(file, auth=(u, p))
-        else:           # Delete option is noit set. Run a simple "get" so we can test a transaction
+
+        else:           # Delete option is not set. Run a simple "get" so we can test a transaction
             lprint ('"get" "%s"' % file, False)
             resp = requests.get(file, auth=(u, p))
 
-        # This is just what to display on the 'request' action we took.
-        # If there was no 'requuest' action on the file we show some info on the 'request' return code
-        # else, don't show data on a file where no action was taken
+        # Display the 'request' return value unless the user skipped that file (thus no status to report)
         if user_skip == False:
             if not 200 <= resp.status_code <= 299:  # Success values (200-299)
-                lprint ('* Warning: %s' % resp, False)
-                lprint ('  a non-success value was returned!', True)
+                lprint ('* Fail: request status: %d' % resp.status_code, False)
             else:
-                lprint ('Success: request status returned: %d' % resp.status_code, False)
+                lprint ('Success: request status: %d' % resp.status_code, False)
 
 def parse_options():
     """ Parse options that are set in the environment (from Jenkins) """
@@ -326,22 +331,22 @@ def parse_options():
     if tmp and tmp.lower() in ['true', '1']:
         DELETE_ONE = True
 
-    tmp = os.getenv("DO_DELETE")               # Used as a test. Run scans but exit after deleting one file
+    tmp = os.getenv("DO_DELETE")                # Process the files marked for deletion
     if tmp and tmp.lower() in ['true', '1']:
         DO_DELETE = True
 
-    tmp = os.getenv("KEEP_FILES")
+    tmp = os.getenv("KEEP_FILES")               # Don't remove the files generated
     if tmp and tmp.lower() in ['true', '1']:
         CLEAN = False
 
-    tmp = os.getenv("USE_CREATED_TIME")
+    tmp = os.getenv("USE_CREATED_TIME")         # Compare 'created' time stamp instead of 'lastModified'
     if tmp and tmp.lower() in ['true', '1']:
         USE_CREATED_TIME = True
         USE_MODIFIED_DATE = False
 
-    tmp = os.getenv("SKIP_FOLDERS")
+    tmp = os.getenv("SKIP_FOLDERS")             # Append new folders to skip to the default list
     if tmp:
-        SKIP_FOLDERS = tmp.split(',')
+        SKIP_FOLDERS.extend(tmp.split(','))
 
     tmp = os.getenv("MAX_DAYS")
     if tmp:
@@ -368,24 +373,24 @@ def lprint(msg, wait):
     """ Log and print a message """
     global timestamp
 
-    if LOG_DATA:
+    if LOG_DATA:                    # If set keep a recoed of what we did (even if NOT in verbose mode)
         with open(LOG_FILE, 'a') as lf:
             lf.write(msg + '\n')
 
     if VERBOSE:                     # Verbose is set
-        if wait:                    # And we requested user input
+        if wait:                    # And requested user intervention
             if WAIT:                # And the WAIT option was issued
-                raw_input(msg)      # So, wait for user
-            else:                   # WAIT not issued
+                raw_input(msg)      # Display message and wait for user
+            else:                   # WAIT not issued; so display the message and wait a few seconds
                 print msg           # Show message
                 sys.stdout.flush()  # Make sure we flush the msg before sleeping
                 time.sleep(2)       # And delay (instead of wait)
         else:
-            print msg               # Else, just print message
+            print msg               # lprint did not request user input (to wait) so just print message
     else:
-        if re.match(r'\* Warning', msg, re.IGNORECASE):
+        if re.match(r'\* Warning', msg, re.IGNORECASE):  # If we have a warning to show, do it even if verbose not set
             print msg
-    sys.stdout.flush()              # One final flush for the rest
+    sys.stdout.flush()              # One final flush to make sure output is seen
 
 
 def main():
@@ -436,17 +441,18 @@ def main():
         WAIT = True         # Wait for user input
         CLEAN = False       # Dont delete files
         os.environ["DO_DELETE"]  = "1"
-    if args.delete_one:
-        os.environ["DELETE_ONE"] = "1"
-        os.environ["DO_DELETE"]  = "1"
-    if args.delete:
-        os.environ["DO_DELETE"] = "1"
+
+    if args.delete_one:                 # CLI flag to delete file one and exit
+        os.environ["DELETE_ONE"] = "1"  # Set same flag as envvar
+        os.environ["DO_DELETE"]  = "1"  # If we want to delete one we must make sure this option is set too
+    if args.delete:                     # CLI flag to delete files
+        os.environ["DO_DELETE"] = "1"   # Set same flag as envvar
     if args.verbose:
         os.environ["VERBOSE"] = "1"
-    if args.keep_file:
-        os.environ["KEEP_FILES"] = "1"
+    if args.keep_file:                  # CLI flag to keep files
+        os.environ["KEEP_FILES"] = "1"  # Set same flag as envvar
     if args.create_time:
-        os.environ["USE_CREATED_TIME"] = "1"
+        os.environ["USE_CREATED_TIME"] = "1"    # Set same flag as envvar
     if args.wait:
         WAIT = True
     if args.generate:
@@ -460,8 +466,15 @@ def main():
 
     parse_options()     # Parse any env-var options Jenkins sent
 
+    # If these files were obtained via an OS call the time stamps do not reflect what Artifactory will show.
+    # So, to be safe, exit
+    if FROM_OS == True and DO_DELETE == True:
+        lprint('** Warning: These files have the system/OS time stamp and that WILL be different from the Artifactory time stamp!', False)
+        lprint('Aborting', False)
+        sys.exit(0)
+
     if DO_DELETE:
-        lprint ('** Delete option is set **', True)
+        lprint ('** Delete option is set **', True) # One last warning to show files will be removed
         if DELETE_ONE:
             lprint ('** Delete one file and exit is also set **', False)
 
@@ -479,10 +492,11 @@ def main():
     lprint ('USE MODIFIED TIME: %s' % USE_MODIFIED_TIME, False)
     lprint ('SKIP FILES: %s' % ', '.join(SKIP_FILES), False)
     lprint ('SKIP FOLDERS: %s' % ', '.join(SKIP_FOLDERS), False)
+    print 'Script is running..'
 
-    # I could process the data w/o saving it but the data is useful for debugging and running multiple time
-    # without having to constantly send requests to artifactory
-    if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data
+    # I could process the data w/o saving it but the data is useful for debugging and running multiple times
+    # without having to constantly send requests to artifactory (especially since this takes a VERY long time)
+    if GEN_SAVED_DATA:  # Scan the artifactory folders and save the data for re-use
         lprint ('\nGenerating bh-snapshots catalog: %s\n%s' % (SNAPSHOT_PATH, HEADER1), False)
         snapshot_base = collect_data(SNAPSHOT_PATH)
         traverse(snapshot_base, snap_catalog)
@@ -499,25 +513,18 @@ def main():
         lprint ('Processing: %s' % dev_file, False)
         file_name = dev_file.split('/')[-1] # Just the file with no path
 
-#        print 'DATE: %s' % snap_catalog[dev_file]
         if FROM_OS:   # Date is formatted differently
             tmp           = snap_catalog[dev_file]    # Strip off timezone
             file_dt       = datetime.datetime.strptime(tmp, '%a %b %d %H:%M:%S %Y') # Convert dev_file to datetime obj
-#            file_dt       = datetime.datetime.strptime(tmp, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
             file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
             file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
-#            lprint('TMP: %s' % tmp, False)
-#            lprint('FILE_DATE_STR: %s' % file_date_str, False)
-#            lprint('FILE_DATE: %s' % file_date, False)
         else:
             tmp           = re.search(r'(.*)(-\d{2,}:\d{2,})', snap_catalog[dev_file])   # Strip off timezone
             tmp_time      = tmp.groups()[0]                                              # Save string w/o TZ
             file_dt       = datetime.datetime.strptime(tmp_time, '%Y-%m-%dT%H:%M:%S.%f') # Convert dev_file to datetime obj
             file_date_str = datetime.datetime.strftime(file_dt, '%Y-%m-%d')              # Create a 'date' (only) string
             file_date     = datetime.datetime.strptime(file_date_str, '%Y-%m-%d')        # Create a 'date' (only) object
-#            lprint('FILE_DT: %s' % file_dt, False)
-#            lprint('FILE_DATE_STR: %s' % file_date_str, False)
-#            lprint('FILE_DATE: %s' % file_date, False)
+
         delta         = todays_date - file_date
 
         if delta.days > MAX_DAYS:
@@ -526,7 +533,6 @@ def main():
         else:
             lprint ('  -> file is not in releases, but only %d days old (%d is cutoff) .. file kept' % (delta.days, MAX_DAYS), False)
             keep.append(dev_file)           # Files NOT in release repo but too yuong
-#        lprint('Next', True)
 
     lprint ('', False)
     lprint('%4d entries in bh-snapshot repo' % len(snap_catalog), False)
