@@ -1,7 +1,7 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.1.13 (05/08/2020)
+# Version 1.1.14 (05/08/2020)
 
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/Artifactory-npm-dev-Cleaner/
@@ -444,9 +444,7 @@ def main():
     if args.generate:
         GEN_SAVED_DATA = False  # Rely only on saved file data (for debugging)
     if args.skip:               # Add these items to our skip list
-        new_list = args.skip.split(',')
-        SKIP_LIST = SKIP_LIST + new_list
-        os.environ["SKIP_LIST"] = ','.join(SKIP_LIST)
+        SKIP_LIST.extend(args.skip.split(','))
         if not GEN_SAVED_DATA:
             print 'Warning: "-S" should not be used with "-g" (since we will be generating new data)'
 
