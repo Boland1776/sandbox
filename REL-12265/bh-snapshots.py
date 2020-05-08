@@ -491,7 +491,6 @@ def main():
     lprint ('SKIP FILES: %s' % ', '.join(SKIP_FILES), False)
     lprint ('SKIP FOLDERS: %s' % ', '.join(SKIP_FOLDERS), False)
     print 'Script is running..'
-    raw_input('WAIT')
 
     # I could process the data w/o saving it but the data is useful for debugging and running multiple times
     # without having to constantly send requests to artifactory (especially since this takes a VERY long time)
