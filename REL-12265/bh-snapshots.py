@@ -1,10 +1,13 @@
 # This script MUST be called with python 2.x
 #!/usr/bin/env python
 #
-# Version 1.0.4 (05/08/2020)
+# Version 1.0.5 (05/11/2020)
 #
 # Called by Jenkins pipeline
 # http://hydrogen.bh-bos2.bullhorn.com/Release_Engineering/Miscellaneous-Tools/cboland-sandbox/Working_Pipelines/<NA>
+#
+# This extends/obsoletes
+#   Jenkins Pileline: http://hydrogen.bh-bos2.bullhorn.com/job/Release_Engineering/job/Practice/job/Artifactory-Clean-Up/
 #
 # See; REL-12265
 #   http://artifactory.bullhorn.com/webapp/#/artifacts/browse/tree/General/bh-snapshots
@@ -29,13 +32,13 @@ import subprocess
 import shlex
 
 FILES_COLLECTED = 0
-# Max number of files to collect. There are over 725000 files so give the option to limit that
+# Max number of files to collect. As of May 2020 were over 725,000 files; give the option to limit that
 # setting to zero means no limit
 MAX_FILES_TO_COLLECT = 1000    # By default process 1000 files. Jenkins may set to something else
 
-# There are over 725,000 files in this repo and running this remotely can take days. I have a test script that collects
-# all files directly but they return the OS time stamp when I was expecting an Artifactory time stamp
-FROM_OS = False         # If True, process the OS time stamp. False, process Artifactory time stamp
+# There are so many files in this repo, and running this remotely can take days, I have a test script that collects
+# all files directly but they return the OS timestamp when I was expecting an Artifactory timestamp
+FROM_OS = False         # If True, process the OS timestamp. False, process Artifactory timestamp
 
 # Processing data will likely be a few layers deep in the traverse function. If we hit the MAX_FILES_TO_COLLECT threshold
 # we begin backing out of those recursive calls.
@@ -49,7 +52,7 @@ HEADER1 = "=" * 90  # Output file header
 HEADER2 = "#" * 90  # Output file header
 
 # User options (some are only available via CLI)
-DELETE_ONE = False  # Delete on file and exit : CLI and Jenkins (for now)
+DELETE_ONE = False  # Delete one file and exit : CLI and Jenkins (for now)
 INTERACTIVE = False # Have user confirm deletion for each file (for debugging) : CLI
 CLEAN     = True    # Clean any files I create (except the log) : CLI and Jenkins
 LOG_DATA  = True
@@ -66,7 +69,7 @@ SNAPSHOT_PATH  = BASE_PATH + '/bh-snapshots'
 
 # Misc files generated
 LOG_FILE          = 'log.txt'           # Script output log
-SNAPSHOT_CATALOG  = 'snap_catalog.txt'  # Where I store bh-snapshots results with time stamp
+SNAPSHOT_CATALOG  = 'snap_catalog.txt'  # Where I store bh-snapshots results with timestamp
 KEEP_FILES        = 'keepers.txt'       # File too young to delete.
 DELETE_FILES      = 'deleters.txt'      # Files to delete
 SKIPPED_FILES     = 'skipped.txt'       # Files/folders to skip (matched SKIP_FOLDERS/FILES)
@@ -128,14 +131,7 @@ def traverse(data, catalog):
 
     # If the data has a 'children' key then I need to process it further
     for c in data['children']:
-        if MAX_FILES_TO_COLLECT > 0 and FILES_COLLECTED >= MAX_FILES_TO_COLLECT:
-            if MAX_DATA_SHOWN == False: # Message has not been displayed yet.
-                lprint('Collected %d files .. exitting' % FILES_COLLECTED, True)
-                MAX_DATA_SHOWN = True   # Set to True to indicate I displayed the message
-            return(catalog)
-        FILES_COLLECTED = FILES_COLLECTED + 1
-
-        if len(SKIP_FOLDERS) > 0:   # If our skip list has at leasat one entry...
+        if len(SKIP_FOLDERS) > 0:   # If our skip list has at least one entry...
 
             # See if this folder (data['path']) is in our list of folders to skip (SKIP_FOLDERS)
             # If so, skip it by returning
@@ -143,6 +139,13 @@ def traverse(data, catalog):
                 lprint ('! skipping folder: %s' % data['uri'], False)
                 skipped.append('Skip Folder: ' + data['uri'])
                 return(catalog)     # There was a match so return w/o further processing
+
+        if MAX_FILES_TO_COLLECT > 0 and FILES_COLLECTED >= MAX_FILES_TO_COLLECT:
+            if MAX_DATA_SHOWN == False: # Message has not been displayed yet.
+                lprint('Collected %d files .. exitting' % FILES_COLLECTED, True)
+                MAX_DATA_SHOWN = True   # Set to True to indicate I displayed the message
+            return(catalog)
+        FILES_COLLECTED = FILES_COLLECTED + 1
 
         # If here, this is a valid file/folder to process
         # Create the full path <new_path> with child name. If it has a 'folder' key we traverse deeper. If not, this
@@ -230,7 +233,7 @@ def save_catalog(dct, file):
     lprint ('Saving catalog "%s"' % file, False)
     with open(file, 'w') as fo:                 # Open <file> for 'write'
         for k in sorted(dct):                   # Loop through dictionary <dct>
-            fo.write('%s|%s\n' % (k, dct[k]))   # Write file name | time stamp
+            fo.write('%s|%s\n' % (k, dct[k]))   # Write file name | timestamp
 
 def write_list(file, lst):
     """ Write a list <lst> of files to keep/skip/delete to file <file> """
@@ -293,15 +296,14 @@ def delete_files(lst, u, p):
                 else:
                     lprint ('skipping "%s"' % file, False)
                     user_skip = True
-            elif DELETE_ONE:   # Delete the first file listed and return (for dbg), if delete fails try the next one
+            elif DELETE_ONE:   # Delete the first file listed and return. If delete fails try the next one
                 lprint ('deleteing "%s"' % file, False)
                 resp = requests.delete(file, auth=(u, p))
                 if 200 <= resp.status_code <= 299:  # Success values (200-299)
-                    lprint ('Success: request status: %d' % resp.status_code, True)
+#                    lprint ('Success: status code: %d' % resp.status_code, True)
+                    return  # return if a file was deleted
                 else:
-                    lprint ('* Fail: request status: %d' % resp.status_code, True)
-
-                return  # return whether deletion passed or failed
+                    lprint ('* Fail: status code: %d' % resp.status_code, True)
 
             else:           # Not interacive, just delete files as they come
                 lprint ('deleteing "%s"' % file, False)
@@ -314,9 +316,9 @@ def delete_files(lst, u, p):
         # Display the 'request' return value unless the user skipped that file (thus no status to report)
         if user_skip == False:
             if not 200 <= resp.status_code <= 299:  # Success values (200-299)
-                lprint ('* Fail: request status: %d' % resp.status_code, False)
-            else:
-                lprint ('Success: request status: %d' % resp.status_code, False)
+                lprint ('* Fail: status code: %d' % resp.status_code, False)
+#            else:
+#                lprint ('Success: status code: %d' % resp.status_code, False)
 
 def parse_options():
     """ Parse options that are set in the environment (from Jenkins) """
@@ -339,7 +341,7 @@ def parse_options():
     if tmp and tmp.lower() in ['true', '1']:
         CLEAN = False
 
-    tmp = os.getenv("USE_CREATED_TIME")         # Compare 'created' time stamp instead of 'lastModified'
+    tmp = os.getenv("USE_CREATED_TIME")         # Compare 'created' timestamp instead of 'lastModified'
     if tmp and tmp.lower() in ['true', '1']:
         USE_CREATED_TIME = True
         USE_MODIFIED_DATE = False
@@ -464,10 +466,10 @@ def main():
 
     parse_options()     # Parse any env-var options Jenkins sent
 
-    # If these files were obtained via an OS call the time stamps do not reflect what Artifactory will show.
+    # If these files were obtained via an OS call the timestamps do not reflect what Artifactory will show.
     # So, to be safe, exit
     if FROM_OS == True and DO_DELETE == True:
-        lprint('** Warning: These files have the system/OS time stamp and that WILL be different from the Artifactory time stamp!', False)
+        lprint('** Warning: These files have the system/OS timestamp and that WILL be different from the Artifactory timestamp!', False)
         lprint('Aborting', False)
         sys.exit(0)
 
